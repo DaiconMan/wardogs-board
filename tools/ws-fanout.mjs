@@ -36,7 +36,7 @@
 //
 // ── 使い方 ──────────────────────────────────────────────────────
 //
-//   node tools/ws-fanout.mjs --base https://wardogs.daiconman.jp \
+//   node tools/ws-fanout.mjs --base https://wardogs-board.pages.dev \
 //        --plan <作戦ID> --clients 50 --hz 4 --seconds 30
 //
 //   --clients   接続本数（既定 50）。**1本は送らない「受け手」になる**

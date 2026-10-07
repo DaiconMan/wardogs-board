@@ -144,8 +144,8 @@ describe("wsUrl", () => {
   it("http は ws、https は wss", () => {
     expect(wsUrl("abc", at("http:", "127.0.0.1:8832")))
       .toBe("ws://127.0.0.1:8832/api/sessions/abc/ws");
-    expect(wsUrl("abc", at("https:", "wardogs.daiconman.jp")))
-      .toBe("wss://wardogs.daiconman.jp/api/sessions/abc/ws");
+    expect(wsUrl("abc", at("https:", "wardogs-board.pages.dev")))
+      .toBe("wss://wardogs-board.pages.dev/api/sessions/abc/ws");
   });
 
   it("作戦 id をエスケープする", () => {

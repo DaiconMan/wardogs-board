@@ -45,13 +45,13 @@ describe("blockedBy", () => {
 
 describe("requireOrigin", () => {
   const make = (origin) =>
-    new Request("https://wardogs.daiconman.jp/api/x", {
+    new Request("https://wardogs-board.pages.dev/api/x", {
       method: "POST",
       headers: origin ? { origin } : {},
     });
 
   it("同一オリジンなら null（通過）", () => {
-    expect(requireOrigin(make("https://wardogs.daiconman.jp"))).toBeNull();
+    expect(requireOrigin(make("https://wardogs-board.pages.dev"))).toBeNull();
   });
   it("別オリジンなら 403", () => {
     expect(requireOrigin(make("https://evil.example")).status).toBe(403);

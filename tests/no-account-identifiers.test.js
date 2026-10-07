@@ -143,4 +143,42 @@ describe("公開ツリーにアカウント固有の識別子が無い", () => {
     const hits = trackedFiles().filter((f) => f.startsWith("public/map/"));
     expect(hits.length, `マップ画像が ${hits.length} 件追跡されている`).toBe(0);
   });
+
+  // ── 6. 自分のサイトを指す URL ──────────────────────────────
+  //
+  // **オーナーの個人ドメインを名乗らない。** whois から氏名に辿れるので、
+  // 公開するツリーに1箇所でも残ると**そこから辿られる**。
+  // もとは Discord を叩く User-Agent がそれを名乗っていて、
+  // **fork した人が他人のホスト名を名乗って Discord にアクセスする**形だった。
+  //
+  // 見張り方は 1〜5 と同じく**形**で見る。禁止するホスト名を書くと、
+  // **このテストそのものがそのホスト名を公開してしまう**ので、逆から書く:
+  // **「自分のサイトを指している URL は `*.pages.dev` でなければならない」。**
+  //
+  // 「自分のサイトを指している」の判定は**ホスト名が `wardogs.` か
+  // `wardogs-` で始まること**。外部の出典サイト（`wardogshub.gg` など）は
+  // 区切りが無いので引っかからない。
+
+  it("自分のサイトを指す URL は pages.dev だけ", () => {
+    const URL_RE = /\bhttps?:\/\/([A-Za-z0-9._-]+)/g;
+    const bad = [];
+    for (const f of textFiles()) {
+      for (const [, host] of read(f).matchAll(URL_RE)) {
+        if (!/^wardogs[.-]/.test(host)) continue;
+        if (host.endsWith(".pages.dev")) continue;
+        bad.push(`${f}: ${host}`);
+      }
+    }
+    expect([...new Set(bad)], `pages.dev 以外のホストを名乗っている: ${bad.join(", ")}`)
+      .toEqual([]);
+  });
+
+  it("Discord を叩く User-Agent が pages.dev を名乗る", () => {
+    // Discord API は Cloudflare の背後にあり UA が必須（callback.js の先頭コメント）。
+    // **fork してそのまま動かしても他人を名乗らない**ことが条件。
+    const ua = /^const UA = "([^"]+)";$/m
+      .exec(read("functions/api/auth/discord/callback.js"));
+    expect(ua, "callback.js の UA 定数が見つからない").not.toBeNull();
+    expect(ua[1]).toMatch(/\(\+https:\/\/[A-Za-z0-9-]+\.pages\.dev\)$/);
+  });
 });

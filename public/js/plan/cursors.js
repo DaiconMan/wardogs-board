@@ -53,7 +53,7 @@ export const CURSOR_BUDGET_PER_SEC = 200;
  * 毎秒50通までで止まっていて（`e2e/plan-cursors.spec.js`）、設計上限そのものは
  * 一度も試験されていなかった。告知で「50人まで」と書く前に本番で流した。
  *
- * **実測 2026-10-04（本番 wardogs.daiconman.jp。`tools/ws-fanout.mjs`）**
+ * **実測 2026-10-04（本番。`tools/ws-fanout.mjs`）**
  *
  * | 流した量 | 受け手に届いた `curs` | 最大の空き | 往復の遅れ p50 / p95 |
  * | --- | --- | --- | --- |

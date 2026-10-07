@@ -5,7 +5,15 @@ import {
 import { json } from "../../../_lib/validate.js";
 
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30日
-const UA = "WardogsBluePlanner/0.1 (+https://wardogs.daiconman.jp)";
+
+// 名乗るのは**正式な URL**（`wardogs-board.pages.dev`）と、改名後の名前。
+//
+// もとはオーナーの個人ドメインのサブドメインを書いていたが、2つの理由で外した。
+// (1) whois からオーナーの本名に辿れる。(2) **fork した人がこの定数のまま
+// デプロイすると、他人のホスト名を名乗って Discord を叩く**ことになる。
+// 名乗るなら、誰のものか辿れて実在する URL にする。
+// `tests/naming.test.js` がここを固定している。
+const UA = "WardogsBoardPlanner/0.1 (+https://wardogs-board.pages.dev)";
 
 // Discord API は Cloudflare の背後にあり、既定の UA だと 403 error code 1010 で弾かれる。
 //

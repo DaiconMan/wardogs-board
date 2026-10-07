@@ -17,7 +17,7 @@
 //        --cookie "wb_session=..." --clients 20 --minutes 30
 //
 // 使い方（本番。Cookie は自分のブラウザの devtools から取る。値はログに出さない）:
-//   node tools/ws-load.mjs --base https://wardogs.daiconman.jp --plan <作戦ID> \
+//   node tools/ws-load.mjs --base https://wardogs-board.pages.dev --plan <作戦ID> \
 //        --cookie "$WB_COOKIE" --clients 20 --minutes 30
 //
 // 引数:
