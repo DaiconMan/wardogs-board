@@ -31,7 +31,7 @@ Cloudflare Pages(무료 한도)에서 돌아가고, 데이터는 Pages Functions
 | **기호** | 건조물·설치물·차량·경기 목표물. **종류마다 모양이 다릅니다**(사각·삼각·원·핀). 색만으로 구분하지 않습니다. 사거리 링과 FOB 건설 범위는 **실측 치수(미터)**로 그리므로, 확대해도 지도와 같은 축척으로 늘고 줄어듭니다 |
 | **지명(콜아웃)** | "저 언덕", "공장", "북쪽 다리" — 팀이 입으로 실제로 부르는 이름을 작전별로 저장합니다 |
 | **영역** | 1km 칸을 칠합니다(우리 쪽·적 쪽·중립·최우선·위험 예상). 집합 연산으로 더하고 뺍니다 |
-| **컨트롤 에리어** | **게임이 정하는 원**(반지름 500m)의 프리셋. 팀의 판단과는 다른 종류의 것이므로 보기에도 확실히 구분해 두었습니다 |
+| **컨트롤 에리어** | **게임이 정하는 원**(반지름 500m. **Ozeti만 550m**)의 프리셋. 팀의 판단과는 다른 종류의 것이므로 보기에도 확실히 구분해 두었습니다 |
 | **핫존** | 반지름 85m, 인원 2배 |
 | **드릴 타워 / 진영 스폰** | 지도에 고정. 매 경기 위치가 같으므로 내장 데이터에서 그대로 나옵니다 |
 
@@ -51,16 +51,29 @@ Cloudflare Pages(무료 한도)에서 돌아가고, 데이터는 Pages Functions
 
 ### 누구에게 보여줄지
 
-| 설정 | 목록에 나오는가 | 볼 수 있는 사람 | 쓸 수 있는 사람 |
-|---|---|---|---|
-| `private` | 자기만 | 자기만 | 자기만 |
-| `public` | 나옴 | 누구나, **로그인하지 않은 게스트도** | 만든 사람만 |
-| `public_edit` | 나옴 | 누구나, 게스트도 | **로그인한 사람이면 누구나** |
+**설정이 바꾸는 것은 "목록에 나오는가"와 "쓸 수 있는가" 두 가지뿐이고,
+열람은 세 상태 모두 같습니다.** 작전을 지키는 것은 URL을 아는지 여부입니다.
 
-**게스트 열람**은 로그인하지 않고 `public` / `public_edit` 작전을 볼 수 있게 하는
-장치입니다. 게스트에게도 두 단어짜리 이름이 자동으로 붙고("조용한 수달" 같은 식),
-커서도 나옵니다. 다만 쓰기는 할 수 없습니다. `public_edit`이라도
-**남이 놓은 것은 누구도 지울 수 없습니다.**
+| 설정 | 목록에 나오는가 | URL을 아는 사람의 열람 | 쓸 수 있는 사람 |
+|---|---|---|---|
+| `private`(기본값) | **안 나옴** | 가능, **게스트도** | **로그인한 사람이면 누구나** |
+| `public` | 나옴 | 가능, 게스트도 | **만든 사람과 admin만** |
+| `public_edit` | 나옴 | 가능, 게스트도 | **로그인한 사람이면 누구나** |
+
+**`private`는 "비밀"이 아니라 "목록에 내지 않음"입니다.** URL을 아는 사람은 열 수 있고,
+로그인했다면 쓸 수도 있습니다. 팀이 비공개 작전의 URL을 돌려 함께 편집하고 있으므로,
+여기를 잠그면 공개 설정을 추가한 것만으로 기존 사용 방식이 깨집니다.
+**숨기고 싶은 정보를 두는 곳이 아닙니다.**
+
+**게스트 열람**은 로그인하지 않고 작전을 볼 수 있게 하는 장치입니다.
+게스트에게도 두 단어짜리 이름이 자동으로 붙고 커서도 나옵니다.
+다만 **어떤 설정에서도 쓰기는 전혀 할 수 없습니다.**
+목록에 나오는 것은 `public` / `public_edit`뿐이지만,
+**URL을 받으면 `private`도 열 수 있습니다.**
+
+남이 놓은 것은 지울 수 없습니다. **다만 admin은 지울 수 있습니다.**
+
+자동으로 붙는 게스트 이름은 **일본어로 고정**되어 있습니다(로케일별 전환은 없습니다).
 
 ---
 
@@ -85,29 +98,41 @@ Cloudflare Pages(무료 한도)에서 돌아가고, 데이터는 Pages Functions
 ## 구성
 
 ```
-public/plan.html            작전 플래너 페이지(마크업과 CSS. 디자인 토큰은 :root)
-public/index.html           /plan으로 보내는 리다이렉트뿐
+public/plan.html            작전 플래너 페이지(**마크업뿐. `<style>`은 없습니다**)
+public/index.html           /plan으로 보내는 리다이렉트뿐(12줄)
 public/_redirects           / -> /plan(302)
-public/_headers             캐시 설정(JS는 매번 재검증, 이미지는 1년 immutable)
-public/css/                 스타일시트(6개)
-public/js/plan/             브라우저 쪽 ES 모듈
+public/_headers             캐시 설정(JS와 CSS는 매번 재검증, 이미지는 1년 immutable)
+public/css/                 스타일시트 6개(**:root의 디자인 토큰은 plan-base.css**)
+public/js/plan/             브라우저 쪽 ES 모듈 25개
   app.js                      화면 조립과 조작 처리. 여기서 나머지를 호출합니다
+  state.js / dom.js / util.js 공유 상태 / 요소 조회 / 작은 도구
+  api.js                      fetch 래퍼
   coords.js                   좌표 변환(게임 내 <-> 미터 <-> SVG)과 칸 이름
   viewport.js / render.js     확대·이동·축척 / SVG 조립
+  chrome.js                   떠 있는 틀의 실측을 --chrome-top/bottom에 되돌려 씁니다
   ink.js                      펜 선의 양자화와 부호화(서버와 공유)
   placements.js               기호와 사거리 링
   areas.js / zones.js         1km 칸의 집합 연산 / 게임이 정하는 원
   towers.js / spawns.js       지도 고정 드릴 타워 / 진영 스폰
   callouts.js / gutter.js     지명 / 보드 가장자리의 칸 이름 머리글
-  cursors.js / changes.js     커서 송수신 / 변경 알림을 받는 타이밍
-  board/                      보드 부품(그리기, 포인터, 실시간 펜 선, 배경 지도 등)
-  pages/                      화면별 조립(작전 목록, 로그인 입구)
+  sessions.js                 작전 목록 표시용 순수 함수
+  visibility.js               공개 설정의 판정(**서버와 공유. 판정의 실체는 여기 하나**)
+  guest.js                    로그인하지 않은 사람의 열람(이름 자동 부여)
+  avatar.js                   Discord 아이콘(색 고리를 남기고 그 안에 넣습니다)
+  choice.js                   한 개 선택 필드(<select>는 쓰지 않습니다. design-system §16)
+  presence.js                 접속자 목록의 WebSocket
+  cursors.js / changes.js     커서·운반·실시간 펜 선 송수신 / 변경 알림을 받는 타이밍
+  board/                      보드 부품 18개(그리기, 포인터, 실시간 펜 선, 배경 지도 등)
+  pages/                      gate.js(로그인 입구) / list.js(작전 목록과 생성)
 
-functions/_lib/             공통부(인증, 입력 검증, 펜 선 코덱, 원의 기하)
-functions/api/sessions/     작전 CRUD와 그 아래의 ink / placements / areas / callouts / zone
-functions/api/auth/discord/ Discord OAuth
+functions/_lib/             공통부 7개(session / guard / validate / ink / zones /
+                            guest / visibility)
+functions/api/sessions/     작전 CRUD와 그 아래의
+                            ink / placements / areas / callouts / zone / ws
+functions/api/auth/         discord/start·discord/callback·logout
+functions/api/me/           /api/me(로그인 상태·게스트 이름·방문 이력)
 functions/api/catalog.js    건조물 카탈로그
-functions/api/maps/         지도 목록 / 컨트롤 에리어 프리셋
+functions/api/maps/         지도 목록 / {id}/zone-presets(GET/POST/PATCH/DELETE)
 functions/api/comments.js   장별 익명 댓글(아래 "남겨 둔 것" 참고)
 
 workers/room/               공유 커서를 중계하는 Durable Object용, Pages와는 별개인 Worker
@@ -115,14 +140,26 @@ workers/room/               공유 커서를 중계하는 Durable Object용, Pag
   src/presence.js             접속 관리의 순수 로직
   src/cursors.js              커서의 전송 제한·직렬화의 순수 로직
 
-schema.sql                  D1 테이블 정의(CREATE TABLE IF NOT EXISTS만. 멱등)
-migrations/                 이미 있는 DB에 한 번만 흘리는 차분 SQL(새로 만들면 불필요)
+schema.sql                  D1 테이블 정의. **멱등**(CREATE TABLE IF NOT EXISTS 23개 /
+                            CREATE INDEX IF NOT EXISTS 20개 / INSERT OR IGNORE 11개뿐)
+migrations/                 이미 있는 DB에 한 번만 흘리는 차분 SQL 4개(새로 만들면 불필요)
 wrangler.toml               Pages 설정(**자기 값을 넣어야 하는 곳이 두 군데**)
-tools/                      운용·검증 스크립트(개발 서버, 지도 타일화, 사용량 실측)
-tests/                      vitest 통합 테스트(로컬 wrangler를 띄워서 호출합니다)
-e2e/                        Playwright UI 테스트
+tools/                      운용·검증 스크립트 6개
+  dev.mjs                     npm run dev(room 8787과 pages 8788을 함께 띄웁니다)
+  build-map-assets.sh         지도 이미지에서 overview와 타일을 만듭니다
+  do-usage.mjs                Durable Objects 사용량을 1분 단위로 읽습니다
+  ws-min.mjs                  최소한의 WebSocket 클라이언트(테스트가 씁니다)
+  ws-load.mjs                 접속을 유지해 무료 범위 소비를 실측합니다
+  ws-fanout.mjs               설계 상한(초당 200통)을 흘려 중계를 측정합니다
+tests/                      vitest(*.test.js 47개). **전부 통합 테스트는 아닙니다**
+                            (coords / ink-codec / zones-geom / cursor-budget /
+                            room-* 등은 서버를 띄우지 않고 동작합니다)
+e2e/                        Playwright(*.spec.js 24개. npm run test:ui가 돌리는 것은
+                            shots.spec.js를 뺀 23개)
 testlib/d1-direct.js        tests/와 e2e/가 공유하는 D1 직접 열기
 docs/design-system.md       화면의 형. **UI를 건드린다면 읽어 주세요**
+LICENSE                     MIT
+THIRD-PARTY-NOTICES.md      외부 데이터의 출처와 라이선스
 ```
 
 ### 일부러 넣지 않은 것
@@ -340,9 +377,14 @@ npm run dev                           # room(8787)과 pages(8788)를 함께 띄�
 ## 테스트
 
 ```bash
-npm test        # vitest 통합 테스트
-npm run test:ui # Playwright UI 테스트
+npm test        # vitest(*.test.js 47개 파일)
+npm run test:ui # Playwright UI 테스트(23개 파일. shots.spec.js는 제외)
+npm run shots   # 눈으로 확인하는 스크린샷을 shots/에 다시 생성(git 관리 밖)
 ```
+
+**`npm test`가 전부 통합 테스트는 아닙니다.** `plan-coords` / `plan-ink-codec` /
+`plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
+`en-headers` / `no-account-identifiers`는 서버를 띄우지 않고 동작합니다.
 
 **둘 다 로컬의 `wrangler pages dev` / `wrangler dev`만 상대합니다.**
 밖으로 나가는 통신은 두 가지뿐입니다.
@@ -449,10 +491,17 @@ node tools/do-usage.mjs --minutes 10
 이름(`wardogs-board`)에 남아 있는 것은 그쪽입니다. 지금은 `/`가 `/plan`으로 302
 하지만(`public/_redirects`), 댓글 API(`/api/comments`)와 테이블은 그대로 있습니다.
 
-- 제한값: `functions/api/comments.js` 맨 앞의 상수(본문 1000자, 이름 24자,
-  IP당 10분 5건)
-- 사람 확인: Cloudflare Turnstile. `TURNSTILE_SECRET`을 설정하지 않으면
-  사람 확인 없이 동작합니다
+**UI는 이제 어느 페이지에도 없습니다.** `/`의 배포를 멈출 때 함께 사라졌으므로
+**남아 있는 것은 서버 쪽뿐**입니다(API를 직접 호출하는 형태가 됩니다).
+쓰려면 어딘가의 페이지에 작성 폼과 Turnstile 위젯을 직접 넣어 주세요.
+
+- 장은 11개(`functions/api/comments.js`의 `SECTIONS`). 추가하려면 여기에 id를 넣습니다
+- 제한값: 같은 파일 맨 앞의 상수(본문 1000자, 이름 24자, IP당 10분 5건,
+  목록은 한 번에 2000건, 본문의 URL은 2개까지)
+- 사람 확인: Cloudflare Turnstile. **`TURNSTILE_SECRET`을 설정하면 `POST`가
+  토큰을 요구합니다.** 위젯이 없는 상태로 설정하면 작성이 전부 403이 됩니다
+  (사이트 키 삽입과 시크릿 등록은 함께). 설정하지 않으면 사람 확인 없이 동작합니다
+- 삭제: `DELETE /api/comments?id=<글 ID>`에 `Authorization: Bearer <ADMIN_TOKEN>`
 - IP는 **해시**해서 저장합니다(`IP_SALT`를 붙여서). 원본 IP는 저장하지 않습니다
 
 ---

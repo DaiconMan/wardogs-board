@@ -30,7 +30,7 @@ Cloudflare Pages（無料枠）で動き、データは Pages Functions + D1（�
 | **記号** | 建造物・設置物・車輌・試合の要素を置く。種別ごとに形が違う（四角・三角・丸・ピン）。射程リングと FOB の建築範囲は**実寸（メートル）**で描くので、ズームしても地図と同じ縮尺で伸縮する |
 | **地名（コールアウト）** | 「あの丘」「工場」「北の橋」。チームが通話でそのまま喋る呼び名を、作戦ごとに置く |
 | **エリア** | 1km マスを塗る（自陣・敵陣・中立・最重要・危険予測）。集合演算で足し引きする |
-| **コントロールエリア** | **ゲームが決める円**（半径500m）のプリセット。チームの見立てとは別物として、見た目もはっきり分けてある |
+| **コントロールエリア** | **ゲームが決める円**（半径500m。**Ozeti だけ 550m**）のプリセット。チームの見立てとは別物として、見た目もはっきり分けてある |
 | **ホットゾーン** | 半径85m、人数2倍の円 |
 | **ドリルタワー / 陣営スポーン** | マップ固定。毎試合同じ位置なので、こちらが持っているデータから勝手に出る |
 
@@ -50,15 +50,26 @@ Cloudflare Pages（無料枠）で動き、データは Pages Functions + D1（�
 
 ### 誰に見せるか
 
-| 設定 | 一覧に出るか | 見られるか | 書けるか |
-|---|---|---|---|
-| `private` | 自分だけ | 自分だけ | 自分だけ |
-| `public` | 出る | 誰でも（**ログイン無しのゲストも**） | 作った人だけ |
-| `public_edit` | 出る | 誰でも（ゲストも） | **ログインしている人なら誰でも** |
+**変えるのは「一覧に出るか」と「書けるか」の2つだけで、閲覧の可否は変わりません。**
+守っているのは「URL を知っていること」です。
 
-**ゲスト閲覧**は、ログインせずに `public` / `public_edit` の作戦を見られる仕組みです。
-ゲストにも名前が自動で付き（「しずかなカワウソ」のような2語の名前）、カーソルも出ます。
-ただし書き込みはできません。`public_edit` でも**他人の置いたものは消せません。**
+| 設定 | 一覧に出るか | URL を知っている人の閲覧 | 書けるか |
+|---|---|---|---|
+| `private`（既定） | **出ない** | できる（**ゲストも**） | **ログインしている人なら誰でも** |
+| `public` | 出る | できる（ゲストも） | **作った人と admin だけ** |
+| `public_edit` | 出る | できる（ゲストも） | **ログインしている人なら誰でも** |
+
+**`private` は「秘密」ではなく「一覧に出さない」です。** URL を知っている人は開けて、
+ログインしていれば書き込めます。チームが非公開の作戦の URL を配って共同編集しているので、
+ここを締めると公開設定を足しただけで既存の使い方が壊れます。
+**隠したい情報を置く場所ではありません。**
+
+**ゲスト閲覧**は、ログインせずに作戦を見られる仕組みです。
+ゲストにも名前が自動で付き（「しずかなカワウソ」のような2語の名前。**日本語で固定**）、
+カーソルも出ます。ただし**書き込みは一切できません**（どの設定でも）。
+一覧に出るのは `public` / `public_edit` だけですが、**URL を渡されれば `private` も開けます。**
+
+他人の置いたものは消せません。**ただし admin は消せます。**
 
 ---
 
@@ -82,29 +93,41 @@ Cloudflare Pages（無料枠）で動き、データは Pages Functions + D1（�
 ## 中身
 
 ```
-public/plan.html            作戦プランナーのページ（マークアップと CSS。:root にデザイントークン）
-public/index.html           /plan へのリダイレクトだけ
+public/plan.html            作戦プランナーのページ（**マークアップだけ。<style> は無い**）
+public/index.html           /plan へのリダイレクトだけ（12行）
 public/_redirects           / → /plan（302）
-public/_headers             キャッシュ設定（JS は毎回再検証。画像は1年 immutable）
-public/css/                 画面の CSS（6ファイル）
-public/js/plan/             ブラウザ側の ES モジュール
+public/_headers             キャッシュ設定（JS と CSS は毎回再検証。画像は1年 immutable）
+public/css/                 画面の CSS 6ファイル（**:root のデザイントークンは plan-base.css**）
+public/js/plan/             ブラウザ側の ES モジュール 25本
   app.js                      画面の組み立てと操作（ここから各モジュールを呼ぶ）
+  state.js / dom.js / util.js 共有する状態／要素の引き当て／小道具
+  api.js                      fetch のラッパ
   coords.js                   座標変換（ゲーム内座標 ↔ メートル ↔ SVG）とセル名
   viewport.js / render.js     ズーム・パン・縮尺／SVG の組み立て
+  chrome.js                   浮いた枠の実寸を測って --chrome-top/bottom に書き戻す
   ink.js                      手書きの量子化・符号化（サーバと共用する）
   placements.js               記号と射程リング
   areas.js / zones.js         1km マスの集合演算／ゲームが決める円
   towers.js / spawns.js       マップ固定のドリルタワー／陣営スポーン
   callouts.js / gutter.js     地名／盤面の縁のセル名見出し
-  cursors.js / changes.js     カーソルの送受信／変更通知の受け方
-  board/                      盤面の部品（描画・ポインタ・ライブ描画・背景地図ほか）
-  pages/                      画面ごとの組み立て（一覧・ログインの入口）
+  sessions.js                 作戦一覧の表示用の純関数
+  visibility.js               公開設定の判定（**サーバと共用する。判定の実体はここ**）
+  guest.js                    ログインしていない人の閲覧（名前の自動割り当て）
+  avatar.js                   Discord のアイコン（色の輪の中身に入れる）
+  choice.js                   1択の欄（<select> は使わない。design-system §16）
+  presence.js                 在室一覧の WebSocket
+  cursors.js / changes.js     カーソル・運搬・ライブ描画の送受信／変更通知の受け方
+  board/                      盤面の部品 18本（描画・ポインタ・ライブ描画・背景地図ほか）
+  pages/                      gate.js（ログインの入口）/ list.js（作戦の一覧と作成）
 
-functions/_lib/             共通（認証・入力検証・インクのコーデック・ゾーンの幾何）
-functions/api/sessions/     作戦の CRUD と、その下の ink / placements / areas / callouts / zone
-functions/api/auth/discord/ Discord OAuth
+functions/_lib/             共通 7本（session / guard / validate / ink / zones /
+                            guest / visibility）
+functions/api/sessions/     /api/sessions と、その下の
+                            ink / placements / areas / callouts / zone / ws
+functions/api/auth/         discord/start・discord/callback・logout
+functions/api/me/           /api/me（ログイン状態・ゲスト名・訪問履歴）
 functions/api/catalog.js    建造物カタログ
-functions/api/maps/         マップ一覧／ゾーンのプリセット
+functions/api/maps/         マップ一覧／{id}/zone-presets（GET/POST/PATCH/DELETE）
 functions/api/comments.js   章ごとの匿名コメント欄（下の「残してあるもの」）
 
 workers/room/               共有カーソルを中継する Durable Object 用の、Pages とは別の Worker
@@ -112,14 +135,26 @@ workers/room/               共有カーソルを中継する Durable Object 用
   src/presence.js             在室管理の純粋ロジック
   src/cursors.js              カーソルのレート制御・直列化の純粋ロジック
 
-schema.sql                  D1 のテーブル定義（CREATE TABLE IF NOT EXISTS だけ。冪等）
-migrations/                 既にある DB に1回だけ流す差分 SQL（新規なら不要）
+schema.sql                  D1 のテーブル定義。**冪等**（CREATE TABLE IF NOT EXISTS 23 /
+                            CREATE INDEX IF NOT EXISTS 20 / INSERT OR IGNORE 11 だけ）
+migrations/                 既にある DB に1回だけ流す差分 SQL 4本（新規なら不要）
 wrangler.toml               Pages 設定（**自分の値を入れる場所が2つある**）
-tools/                      運用・検証スクリプト（開発サーバ、マップ画像のタイル化、使用量の実測）
-tests/                      vitest 統合テスト（ローカルの wrangler を立てて叩く）
-e2e/                        Playwright UIテスト
+tools/                      運用・検証スクリプト6本
+  dev.mjs                     npm run dev（room 8787 と pages 8788 を同時に立てる）
+  build-map-assets.sh         マップ画像から overview とタイルを作る
+  do-usage.mjs                Durable Objects の使用量を1分刻みで読む
+  ws-min.mjs                  最小の WebSocket クライアント（テストが使う）
+  ws-load.mjs                 接続を維持して無料枠の消費を実測する
+  ws-fanout.mjs               設計上限（毎秒200通）を流して配信を測る
+tests/                      vitest（*.test.js 47ファイル）。**全部が統合テストではない**
+                            （coords / ink-codec / zones-geom / cursor-budget /
+                            room-* などはサーバを立てずに動く）
+e2e/                        Playwright（*.spec.js 24ファイル。npm run test:ui が走らせるのは
+                            shots.spec.js を除いた 23ファイル）
 testlib/d1-direct.js        tests/ と e2e/ が共用する D1 の直接オープン
 docs/design-system.md       画面の型。**UI を触るなら読んでください**
+LICENSE                     MIT
+THIRD-PARTY-NOTICES.md      外部データの出典とライセンス
 ```
 
 ### このリポジトリに入っていないもの
@@ -185,8 +220,10 @@ database_name = "wardogs-blue"              # 上で付けた名前
 database_id = "PUT-YOUR-OWN-DATABASE-ID-HERE"   # ← ここ
 ```
 
-テーブルを作ります。`schema.sql` は `CREATE TABLE IF NOT EXISTS` と `INSERT OR IGNORE`
-だけで書いてあるので、**何度流しても結果が変わりません。**
+テーブルを作ります。`schema.sql` は `CREATE TABLE IF NOT EXISTS` と
+`CREATE INDEX IF NOT EXISTS` と `INSERT OR IGNORE` だけで書いてあるので、
+**何度流しても結果が変わりません**（`ALTER TABLE` は1つも入れていません。
+入れると2回目で必ず落ちます)。
 
 ```bash
 npx wrangler d1 execute wardogs-blue --local  --file=schema.sql   # ローカル用
@@ -335,9 +372,14 @@ npm run dev                           # room（8787）と pages（8788）を両�
 ## テスト
 
 ```bash
-npm test        # vitest の統合テスト
-npm run test:ui # Playwright の UIテスト
+npm test        # vitest（*.test.js 47ファイル）
+npm run test:ui # Playwright の UIテスト（23ファイル。shots.spec.js は除く）
+npm run shots   # 目視確認用のスクリーンショットを shots/ に再生成（git 管理外）
 ```
+
+**`npm test` は全部が統合テストではありません。** `plan-coords` / `plan-ink-codec` /
+`plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
+`en-headers` / `no-account-identifiers` はサーバを立てずに動く単体テストです。
 
 **どちらもローカルの `wrangler pages dev` / `wrangler dev` を相手にします。**
 外に出る通信は2つだけです。
@@ -444,8 +486,17 @@ node tools/do-usage.mjs --minutes 10
 302 で送っていますが（`public/_redirects`）、コメント欄の API（`/api/comments`）と
 テーブルはそのまま残してあります。
 
-- 制限値: `functions/api/comments.js` 冒頭の定数（本文1000文字、名前24文字、IPごと10分5件）
-- 人間確認: Cloudflare Turnstile。`TURNSTILE_SECRET` 未設定なら人間確認なしで動く
+**UI はもうどのページにもありません。** `/` の配信を止めたときに一緒に無くなったので、
+**残っているのはサーバ側だけ**です（API を直接叩く形になります）。
+使うなら、どこかのページに投稿フォームと Turnstile のウィジェットを自分で足してください。
+
+- 章は11個（`functions/api/comments.js` の `SECTIONS`）。足すならここに id を入れる
+- 制限値: 同ファイル冒頭の定数（本文1000文字、名前24文字、IPごと10分5件、
+  一覧は1回2000件まで、本文に URL は2つまで）
+- 人間確認: Cloudflare Turnstile。**`TURNSTILE_SECRET` を設定すると `POST` は
+  トークンを要求します。** ウィジェットが無いまま設定すると、投稿が全部 403 になります
+  （サイトキーの埋め込みとシークレットの登録はセットで）。未設定なら人間確認なしで動く
+- 削除: `DELETE /api/comments?id=<投稿ID>` に `Authorization: Bearer <ADMIN_TOKEN>`
 - IP は**ハッシュ化**して保存します（`IP_SALT` 付き）。生の IP は保存しません
 
 ---

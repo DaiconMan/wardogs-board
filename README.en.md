@@ -32,7 +32,7 @@ tier), and signs people in with Discord OAuth.
 | **Markers** | Structures, emplacements, vehicles and match objectives. The shape differs per kind (square, triangle, circle, pin) rather than the colour alone. Range rings and FOB build radii are drawn **at true scale in metres**, so they grow and shrink with the map as you zoom |
 | **Callouts** | "that hill", "the factory", "the north bridge" — the names your team actually says out loud, stored per plan |
 | **Areas** | Paint 1 km cells (ours / theirs / neutral / key / expected trouble) with set operations to add and subtract |
-| **Control areas** | The circles **the game itself decides** (500 m radius), as presets. Visually kept well apart from the team's own guesses, because they are a different kind of thing |
+| **Control areas** | The circles **the game itself decides** (500 m radius; **550 m on Ozeti**), as presets. Visually kept well apart from the team's own guesses, because they are a different kind of thing |
 | **Hot zones** | 85 m radius, double headcount |
 | **Drill towers / faction spawns** | Fixed to the map. The positions are identical every match, so they come straight out of the bundled data |
 
@@ -53,16 +53,29 @@ the background.
 
 ### Who gets to see it
 
-| Setting | Listed | Can view | Can edit |
+**The setting only changes two things: whether the plan is listed, and who can
+edit it. Viewing is the same in all three states** — what guards a plan is knowing
+its URL.
+
+| Setting | Listed | Can view (with the URL) | Can edit |
 |---|---|---|---|
-| `private` | you only | you only | you only |
-| `public` | yes | anyone, **including guests who are not logged in** | the author only |
+| `private` (default) | **no** | anyone, **including guests** | **anyone who is logged in** |
+| `public` | yes | anyone, including guests | **the author and admins** |
 | `public_edit` | yes | anyone, including guests | **anyone who is logged in** |
 
-**Guest viewing** lets people open a `public` / `public_edit` plan without logging in.
-Guests get an automatic two-word name (something like "the quiet otter") and their
-cursor shows up too, but they cannot write. Even under `public_edit`, **nobody can
-delete anybody else's markers.**
+**`private` means "not listed", not "secret".** Anyone with the URL can open it,
+and anyone logged in can write to it. Teams pass the URL of a private plan around
+and edit it together, so locking that down would break the existing workflow just
+by adding a visibility setting. **It is not a place for anything you need hidden.**
+
+**Guest viewing** lets people open a plan without logging in. Guests get an
+automatic two-word name and their cursor shows up too, but they **cannot write
+at all**, under any setting. Only `public` / `public_edit` plans appear in the
+list, but **a guest handed the URL can open a `private` plan as well.**
+
+Nobody can delete anybody else's markers — **except admins, who can.**
+
+The generated guest names are **Japanese only** (there is no per-locale wording).
 
 ---
 
@@ -86,29 +99,41 @@ delete anybody else's markers.**
 ## Layout
 
 ```
-public/plan.html            the planner page (markup and CSS; design tokens in :root)
-public/index.html           a redirect to /plan and nothing else
+public/plan.html            the planner page (**markup only; there is no <style> block**)
+public/index.html           a redirect to /plan and nothing else (12 lines)
 public/_redirects           / -> /plan (302)
-public/_headers             caching (JS revalidates every time; images are immutable for a year)
-public/css/                 the stylesheets (6 files)
-public/js/plan/             the browser-side ES modules
+public/_headers             caching (JS and CSS revalidate every time; images are immutable for a year)
+public/css/                 the stylesheets, 6 files (**the :root design tokens live in plan-base.css**)
+public/js/plan/             the browser-side ES modules, 25 files
   app.js                      assembles the screen and handles interaction; calls the rest
+  state.js / dom.js / util.js shared state / element lookup / small helpers
+  api.js                      the fetch wrapper
   coords.js                   coordinate conversion (in-game <-> metres <-> SVG) and cell names
   viewport.js / render.js     zoom, pan and scale / SVG construction
+  chrome.js                   measures the floating frame into --chrome-top/bottom
   ink.js                      stroke quantisation and encoding (shared with the server)
   placements.js               markers and range rings
   areas.js / zones.js         1 km cell set operations / the circles the game decides
   towers.js / spawns.js       map-fixed drill towers / faction spawns
   callouts.js / gutter.js     place names / cell-name headings in the board margin
-  cursors.js / changes.js     cursor send-receive / how change notifications are handled
-  board/                      board parts (drawing, pointer, live ink, background map, ...)
-  pages/                      per-screen assembly (the plan list, the login gate)
+  sessions.js                 pure functions for rendering the plan list
+  visibility.js               the visibility rule (**shared with the server; this is the one copy**)
+  guest.js                    viewing without logging in (automatic name assignment)
+  avatar.js                   Discord avatars (placed inside the colour ring, not replacing it)
+  choice.js                   single-choice fields (no <select>; design-system §16)
+  presence.js                 the presence WebSocket
+  cursors.js / changes.js     cursors, carry and live ink / how change notifications are handled
+  board/                      board parts, 18 files (drawing, pointer, live ink, background map, ...)
+  pages/                      gate.js (login gate) / list.js (the plan list and creation)
 
-functions/_lib/             shared code (auth, input validation, the ink codec, zone geometry)
-functions/api/sessions/     plan CRUD and, beneath it, ink / placements / areas / callouts / zone
-functions/api/auth/discord/ Discord OAuth
+functions/_lib/             shared code, 7 files (session / guard / validate / ink / zones /
+                            guest / visibility)
+functions/api/sessions/     plan CRUD and, beneath it,
+                            ink / placements / areas / callouts / zone / ws
+functions/api/auth/         discord/start, discord/callback, logout
+functions/api/me/           /api/me (login state, guest name, visit history)
 functions/api/catalog.js    the structure catalogue
-functions/api/maps/         map list / zone presets
+functions/api/maps/         map list / {id}/zone-presets (GET/POST/PATCH/DELETE)
 functions/api/comments.js   per-chapter anonymous comments (see "What is still here")
 
 workers/room/               a separate Worker (not Pages) for the cursor-relay Durable Object
@@ -116,14 +141,26 @@ workers/room/               a separate Worker (not Pages) for the cursor-relay D
   src/presence.js             pure presence logic
   src/cursors.js              pure rate-limiting and serialisation logic for cursors
 
-schema.sql                  D1 table definitions (CREATE TABLE IF NOT EXISTS only; idempotent)
-migrations/                 one-shot deltas for databases that already exist (not needed for a fresh one)
+schema.sql                  D1 table definitions. **Idempotent** (23 CREATE TABLE IF NOT EXISTS,
+                            20 CREATE INDEX IF NOT EXISTS, 11 INSERT OR IGNORE, nothing else)
+migrations/                 4 one-shot deltas for databases that already exist (not needed for a fresh one)
 wrangler.toml               Pages configuration (**two values you must fill in yourself**)
-tools/                      operational scripts (dev server, map tiling, usage measurement)
-tests/                      vitest integration tests (they start local wrangler and call it)
-e2e/                        Playwright UI tests
+tools/                      6 operational scripts
+  dev.mjs                     npm run dev (brings up room on 8787 and pages on 8788)
+  build-map-assets.sh         builds the overview and tiles from a map image
+  do-usage.mjs                reads Durable Objects usage minute by minute
+  ws-min.mjs                  a minimal WebSocket client (the tests use it)
+  ws-load.mjs                 holds connections open to measure free-tier consumption
+  ws-fanout.mjs               pushes the design ceiling (200 msg/s) to measure fan-out
+tests/                      vitest (47 *.test.js files). **Not all of them are integration tests**
+                            (coords, ink-codec, zones-geom, cursor-budget, room-* and others
+                            run without a server)
+e2e/                        Playwright (24 *.spec.js files; npm run test:ui runs the 23 that
+                            are left once shots.spec.js is excluded)
 testlib/d1-direct.js        the direct D1 open shared by tests/ and e2e/
 docs/design-system.md       the shape of the screen. **Read this before touching the UI**
+LICENSE                     MIT
+THIRD-PARTY-NOTICES.md      sources and licences for external data
 ```
 
 ### What is deliberately absent
@@ -336,9 +373,14 @@ go missing and everything else keeps working.
 ## Tests
 
 ```bash
-npm test        # vitest integration tests
-npm run test:ui # Playwright UI tests
+npm test        # vitest (47 *.test.js files)
+npm run test:ui # Playwright UI tests (23 files; shots.spec.js is excluded)
+npm run shots   # regenerates the eyeball-check screenshots into shots/ (not in git)
 ```
+
+**`npm test` is not all integration tests.** `plan-coords`, `plan-ink-codec`,
+`plan-zones-geom`, `plan-cursor-budget`, `room-cursors`, `room-presence`,
+`en-headers` and `no-account-identifiers` run without starting a server.
 
 **Both of them talk only to a local `wrangler pages dev` / `wrangler dev`.** Exactly two
 things reach the network:
@@ -449,9 +491,17 @@ chapter**, which is where the name `wardogs-board` comes from. `/` now 302s to `
 (`public/_redirects`), but the comment API (`/api/comments`) and its tables are still in
 place.
 
-- Limits: the constants at the top of `functions/api/comments.js` (1,000 characters of
-  body, 24 of name, 5 posts per IP per 10 minutes)
-- Human check: Cloudflare Turnstile. With no `TURNSTILE_SECRET` it runs without one
+**There is no UI left for it.** It went away with `/`, so **only the server side
+remains** — you reach it by calling the API directly. To use it, add a post form and
+a Turnstile widget to a page yourself.
+
+- 11 chapters (`SECTIONS` in `functions/api/comments.js`). Add an id there for a new one
+- Limits: the constants at the top of the same file (1,000 characters of body, 24 of
+  name, 5 posts per IP per 10 minutes, 2,000 rows per listing, at most 2 URLs in a body)
+- Human check: Cloudflare Turnstile. **Setting `TURNSTILE_SECRET` makes `POST` require
+  a token**, so setting it while no widget exists turns every post into a 403
+  (embed the site key and register the secret together). With no secret it runs without one
+- Deleting: `DELETE /api/comments?id=<id>` with `Authorization: Bearer <ADMIN_TOKEN>`
 - IP addresses are stored **hashed** (with `IP_SALT`). The raw address is never stored
 
 ---

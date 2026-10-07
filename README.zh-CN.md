@@ -29,7 +29,7 @@
 | **标记** | 建筑、设置物、车辆、对局目标。**形状按类别区分**（方、三角、圆、针），不只靠颜色。射程圈和 FOB 建造范围按**真实尺寸（米）**绘制，所以缩放时跟地图同比例伸缩 |
 | **地名（callout）** | "那个山包""工厂""北边的桥" —— 队里嘴上真会这么叫的名字，按战术方案各自保存 |
 | **区域** | 涂 1km 格子（我方／敌方／中立／最重要／预判危险），可用集合运算加减 |
-| **控制区** | **游戏自己定的圆**（半径 500m）的预设。和队里自己的判断在视觉上刻意分得很开，因为它们是两回事 |
+| **控制区** | **游戏自己定的圆**（半径 500m，**Ozeti 是 550m**）的预设。和队里自己的判断在视觉上刻意分得很开，因为它们是两回事 |
 | **热区** | 半径 85m，人数两倍 |
 | **钻井塔／阵营出生点** | 固定在地图上。每局位置都一样，所以直接由内置数据画出 |
 
@@ -49,15 +49,27 @@
 
 ### 给谁看
 
-| 设置 | 出现在列表 | 谁能看 | 谁能改 |
-|---|---|---|---|
-| `private` | 只有自己 | 只有自己 | 只有自己 |
-| `public` | 出现 | 任何人，**包括未登录的访客** | 只有作者 |
-| `public_edit` | 出现 | 任何人，含访客 | **任何已登录的人** |
+**设置只改两件事：是否出现在列表、谁能改。三种状态的浏览权限完全一样**
+——真正把方案护住的是"知不知道 URL"。
 
-**访客浏览**让人不登录也能看 `public` / `public_edit` 的方案。
-访客会自动拿到一个两词的名字（类似"安静的水獭"），光标也会显示，但不能写入。
-即便是 `public_edit`，**谁也删不掉别人放的东西。**
+| 设置 | 出现在列表 | 知道 URL 的人能看吗 | 谁能改 |
+|---|---|---|---|
+| `private`（默认） | **不出现** | 能，**访客也能** | **任何已登录的人** |
+| `public` | 出现 | 能，访客也能 | **只有作者和 admin** |
+| `public_edit` | 出现 | 能，访客也能 | **任何已登录的人** |
+
+**`private` 的意思是"不列出"，不是"保密"。** 知道 URL 的人能打开，登录了就能写。
+队里本来就是把非公开方案的 URL 传给彼此一起编辑的，把这里锁上，
+等于光加了个公开设置就把原来的用法弄坏了。**这里不是放需要藏起来的东西的地方。**
+
+**访客浏览**让人不登录也能看方案。访客会自动拿到一个两词的名字，光标也会显示，
+但**在任何设置下都完全不能写入**。
+出现在列表里的只有 `public` / `public_edit`，
+但**访客拿到 URL 也能打开 `private` 的方案。**
+
+别人放的东西删不掉。**不过 admin 能删。**
+
+自动生成的访客名字**固定是日语**（没有按语言切换）。
 
 ---
 
@@ -79,29 +91,41 @@
 ## 目录结构
 
 ```
-public/plan.html            战术板页面（标记与 CSS；设计 token 在 :root）
-public/index.html           只做一件事：跳转到 /plan
+public/plan.html            战术板页面（**只有标记；没有 `<style>`**）
+public/index.html           只做一件事：跳转到 /plan（12 行）
 public/_redirects           / -> /plan（302）
-public/_headers             缓存设置（JS 每次重新校验，图片一年 immutable）
-public/css/                 样式表（6 个文件）
-public/js/plan/             浏览器端的 ES 模块
+public/_headers             缓存设置（JS 和 CSS 每次重新校验，图片一年 immutable）
+public/css/                 样式表 6 个文件（**:root 的设计 token 在 plan-base.css**）
+public/js/plan/             浏览器端的 ES 模块 25 个
   app.js                      组装画面并处理操作，从这里调用其余模块
+  state.js / dom.js / util.js 共享状态／元素查找／小工具
+  api.js                      fetch 的封装
   coords.js                   坐标换算（游戏内 <-> 米 <-> SVG）与格名
   viewport.js / render.js     缩放・平移・比例尺／SVG 的组装
+  chrome.js                   量出悬浮边框的实际尺寸，写回 --chrome-top/bottom
   ink.js                      笔画的量化与编码（与服务端共用）
   placements.js               标记与射程圈
   areas.js / zones.js         1km 格的集合运算／游戏自己定的圆
   towers.js / spawns.js       地图固定的钻井塔／阵营出生点
   callouts.js / gutter.js     地名／棋盘边缘的格名标题
-  cursors.js / changes.js     光标收发／变更通知的处理时机
-  board/                      棋盘部件（绘制、指针、实时笔迹、背景地图等）
-  pages/                      各画面的组装（方案列表、登录入口）
+  sessions.js                 方案列表显示用的纯函数
+  visibility.js               公开设置的判定（**与服务端共用，判定只有这一份**）
+  guest.js                    未登录的人的浏览（自动分配名字）
+  avatar.js                   Discord 头像（保留颜色环，放进环里面）
+  choice.js                   单选字段（不用 <select>。design-system §16）
+  presence.js                 在场列表的 WebSocket
+  cursors.js / changes.js     光标・搬运・实时笔迹的收发／变更通知的处理时机
+  board/                      棋盘部件 18 个（绘制、指针、实时笔迹、背景地图等）
+  pages/                      gate.js（登录入口）／list.js（方案列表与新建）
 
-functions/_lib/             公共部分（认证、输入校验、笔迹编解码、圆的几何）
-functions/api/sessions/     方案的 CRUD，及其下的 ink / placements / areas / callouts / zone
-functions/api/auth/discord/ Discord OAuth
+functions/_lib/             公共部分 7 个（session / guard / validate / ink / zones /
+                            guest / visibility）
+functions/api/sessions/     方案的 CRUD，及其下的
+                            ink / placements / areas / callouts / zone / ws
+functions/api/auth/         discord/start・discord/callback・logout
+functions/api/me/           /api/me（登录状态・访客名字・访问记录）
 functions/api/catalog.js    建筑目录
-functions/api/maps/         地图列表／控制区预设
+functions/api/maps/         地图列表／{id}/zone-presets（GET/POST/PATCH/DELETE）
 functions/api/comments.js   按章节的匿名留言（见"保留下来的部分"）
 
 workers/room/               中继共享光标的 Durable Object 专用 Worker（与 Pages 分开）
@@ -109,14 +133,26 @@ workers/room/               中继共享光标的 Durable Object 专用 Worker�
   src/presence.js             在场管理的纯逻辑
   src/cursors.js              光标限流与串行化的纯逻辑
 
-schema.sql                  D1 的表定义（只有 CREATE TABLE IF NOT EXISTS，幂等）
-migrations/                 给已有数据库补差分的一次性 SQL（新建的话不需要）
+schema.sql                  D1 的表定义。**幂等**（23 个 CREATE TABLE IF NOT EXISTS、
+                            20 个 CREATE INDEX IF NOT EXISTS、11 个 INSERT OR IGNORE）
+migrations/                 给已有数据库补差分的一次性 SQL 4 个（新建的话不需要）
 wrangler.toml               Pages 配置（**有两处要填自己的值**）
-tools/                      运维与验证脚本（开发服务器、地图切片、用量实测）
-tests/                      vitest 集成测试（会起本地 wrangler 再去打它）
-e2e/                        Playwright UI 测试
+tools/                      运维与验证脚本 6 个
+  dev.mjs                     npm run dev（同时起 room 8787 和 pages 8788）
+  build-map-assets.sh         从地图图片生成 overview 和瓦片
+  do-usage.mjs                按分钟读取 Durable Objects 的用量
+  ws-min.mjs                  最小的 WebSocket 客户端（测试会用）
+  ws-load.mjs                 维持连接以实测免费额度的消耗
+  ws-fanout.mjs               按设计上限（每秒 200 条）压测中继
+tests/                      vitest（*.test.js 47 个文件）。**并不全是集成测试**
+                            （coords / ink-codec / zones-geom / cursor-budget /
+                            room-* 等不用起服务器）
+e2e/                        Playwright（*.spec.js 24 个文件。npm run test:ui 跑的是
+                            排除 shots.spec.js 后的 23 个）
 testlib/d1-direct.js        tests/ 与 e2e/ 共用的 D1 直接打开
 docs/design-system.md       画面的型。**要动 UI 请先读这个**
+LICENSE                     MIT
+THIRD-PARTY-NOTICES.md      外部数据的出处与许可
 ```
 
 ### 故意没有放进来的东西
@@ -327,9 +363,14 @@ npm run dev                           # 同时起 room（8787）和 pages（8788
 ## 测试
 
 ```bash
-npm test        # vitest 集成测试
-npm run test:ui # Playwright UI 测试
+npm test        # vitest（*.test.js 47 个文件）
+npm run test:ui # Playwright UI 测试（23 个文件，排除 shots.spec.js）
+npm run shots   # 把肉眼确认用的截图重新生成到 shots/（不进 git）
 ```
+
+**`npm test` 并不全是集成测试。** `plan-coords` / `plan-ink-codec` /
+`plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
+`en-headers` / `no-account-identifiers` 都不用起服务器就能跑。
 
 **两者都只打本地的 `wrangler pages dev` / `wrangler dev`。** 出网的只有两件事：
 
@@ -431,8 +472,16 @@ node tools/do-usage.mjs --minutes 10
 现在 `/` 会 302 到 `/plan`（`public/_redirects`），
 但留言的 API（`/api/comments`）和相应的表都还在。
 
-- 限制值：`functions/api/comments.js` 开头的常量（正文 1000 字、名字 24 字、每 IP 每 10 分钟 5 条）
-- 人机校验：Cloudflare Turnstile。没设 `TURNSTILE_SECRET` 就不做校验照常跑
+**界面已经不在任何页面上了。** 它随着 `/` 一起没了，**留下的只有服务端**
+（要用就得直接打 API）。想用的话，请自己在某个页面上加投稿表单和 Turnstile 控件。
+
+- 章节 11 个（`functions/api/comments.js` 里的 `SECTIONS`）。要加就往那里放 id
+- 限制值：同一文件开头的常量（正文 1000 字、名字 24 字、每 IP 每 10 分钟 5 条、
+  列表一次最多 2000 条、正文里的 URL 最多 2 个）
+- 人机校验：Cloudflare Turnstile。**设了 `TURNSTILE_SECRET`，`POST` 就会要求 token**，
+  所以在没有控件的情况下设置它，等于让所有投稿都变成 403
+  （嵌入 site key 和登记 secret 要一起做）。没设就不做校验照常跑
+- 删除：`DELETE /api/comments?id=<帖子 ID>`，带 `Authorization: Bearer <ADMIN_TOKEN>`
 - IP 以**哈希**保存（带 `IP_SALT`）。原始 IP 不入库
 
 ---
