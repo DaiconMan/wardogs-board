@@ -1,0 +1,34 @@
+node_modules/
+.wrangler/
+.dev.vars
+wardogs-board.zip
+wardogs-blue.zip
+.DS_Store
+test-results/
+playwright-report/
+*.local
+.superpowers/
+
+# マップ画像。
+#
+# EN: Map imagery. `public/map/` is ignored on purpose: the images are not ours to
+#     redistribute, and 4,000+ tiles is not something you want to push by accident.
+#     The app works without them. If you decide to commit your own, delete the
+#     `public/map/` line below **and** the matching check in
+#     tests/no-account-identifiers.test.js.
+#
+# **`public/map/` は意図して無視している。** 画像はこちらの著作物ではなく配れない
+# うえ、4,000枚超をうっかり push したいものでもない。無くてもアプリは動く。
+# 自分の画像をコミットすると決めたなら、下の `public/map/` の行**と**
+# tests/no-account-identifiers.test.js の対応する検査を消すこと。
+public/map/
+
+# 元画像と中間生成物（巨大。tools/build-map-assets.sh がタイル化して使う）
+*_map.png
+map-src/
+map-tiles/
+@eaDir/
+map-out/
+
+# 目視確認用のスクリーンショット（npm run shots で作られる作業物）
+shots/

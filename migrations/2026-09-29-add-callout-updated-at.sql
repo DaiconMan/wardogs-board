@@ -1,0 +1,15 @@
+-- 既存 DB 用。callouts（マップ静的な地名のマスタ）に updated_at を足す。
+--
+-- 地名は2層に分かれている。
+--   session_callouts … プランごとの実体。地図に出るのはこちら。新しい表なので
+--                      schema.sql の CREATE TABLE IF NOT EXISTS で足りる（migration 不要）
+--   callouts         … マップ静的な雛形（マスタ）。こちらは既に本番に存在するので、
+--                      列の追加には ALTER TABLE が要る
+--
+-- マスタは雛形として編集できる必要があるため（良い呼び名ができたら書き戻す）、
+-- いつ直したかを持たせる。NULL 許容なので既存の行は書き換わらない。
+--
+-- schema.sql の CREATE TABLE 側にも同じ列を足してある（新規 DB 用）。
+-- 片方だけだと新規 DB と本番 DB の形が食い違う。
+-- 2回流すと `duplicate column name: updated_at` で止まる。それは適用済みの印。
+ALTER TABLE callouts ADD COLUMN updated_at INTEGER;

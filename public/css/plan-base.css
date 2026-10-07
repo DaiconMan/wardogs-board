@@ -1,0 +1,671 @@
+/* /plan のスタイル: 色の土台・デザイントークン・HUD の層・1択の欄・ヘッダ
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── 色の土台（/plan 専用）────────────────────────────────────
+   もとは public/index.html（作戦ノート）の :root をそのままコピーしていたが、
+   /plan は読み物ではなく**ゲームの続きで開く道具**なので、ここから分ける。
+   作戦ノート側（public/index.html）の値は変えない。あちらは別物として据え置く。
+
+   寄せ先はゲーム内 UI（~/wardogs-frames/ の実機スクリーンショット）。
+   map-20（フルマップ）・map-31（分隊パネル）・map-33（確認ダイアログ）から
+   読めたのは次の4つ。
+
+     * 濃いスレートの板（半透明）の上に情報を載せる
+     * 枠も区切りも **1px の細線**。影はほとんど使わない
+     * **角丸をほとんど使わない**
+     * 色は意味のあるものだけ（陣営の赤・緑・青、警告の黄、操作の琥珀）
+
+   そこで青系に寄っていた無彩色を**中立のスレート**へ振り直し、角丸を 0 にする。
+   意味を持つ色（--blue / --hot / --red / --green / --cursor-*）は**値も意味も
+   据え置く**。地図の上の図形はこの色で読む約束になっているため。 */
+:root{
+  --paper:#E4E7EA; --panel:#FFFFFF; --ink:#13181D; --muted:#5A646E; --line:#C2C9D0;
+  --blue:#2A87C8; --blue-bright:#4CB1EF; --blue-soft:#D9EDF9;
+  --hot:#E3B341; --red:#E8503F; --green:#22B55B;
+  --wood:#8CA88F; --wall:#7A8794; --ground:#D5DDE5;
+  /* ゲームの UI は角を丸めない。面も小片も同じ 0 にする。 */
+  --radius:0px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  /* **ブラウザが描く部分も濃い側に揃える。**
+     スクロールバーとキャレットは CSS では塗れない。/plan はどの画面も
+     濃い地なので、ここは配色の設定で切り替えない。
+
+     **これに <select> のポップアップを任せるのは失敗した。**
+     オーナーの実機（Windows Chrome）では効かず、薄いグレー地に薄いグレー文字で
+     選択肢が読めなかった（2026-10-01）。`<select>` は全部やめて、こちらで
+     描く1択の欄（§1 の .choice ／ js/plan/choice.js）に置き換えた。
+     **ブラウザに任せる部分を増やさない**、がここの教訓。 */
+  color-scheme:dark;
+  /* スクロールバーも、できるところまでは**こちらの色で**指定する
+     （`color-scheme` だけに頼らない。上の教訓）。対応していないブラウザでは
+     `color-scheme:dark` の既定に落ちるだけで、明るい棒が出ることはない。 */
+  scrollbar-color:rgba(226,234,242,.35) transparent;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --paper:#0D1013; --panel:#171B20; --ink:#E8EDF2; --muted:#98A3AE; --line:#2A3138;
+         --blue:#4CB1EF; --blue-bright:#7CC8F5; --blue-soft:#15303F;
+         --wood:#4F6B55; --wall:#8FA0B2; --ground:#1C2A3B; }
+}
+
+/* ── 足したデザイントークン ───────────────────────────────────
+   上のトークンは土台として据え置き、足りないものだけを足す。
+   既存トークンの「意味」は変えない（--blue は主役の青、--red は危険・不可、
+   --hot は未確認、という割り当てのまま）。
+   詳しい使い分けは docs/design-system.md に書いてある。 */
+:root{
+  /* 書体は3役。
+       --font-ui      文章とラベル（日本語。Zen Kaku Gothic New）
+       --font-display ラテン文字と見出しの小文字（コンデンスド。ゲームの HUD の字面）
+       --font-data    桁を比べる数値（等幅。system stack。追加の取得をしない）
+     ゲームの HUD はラテン文字と数字がコンデンスドの技術書体で組まれている
+     （map-20 の `1KM` `x73.30`、map-31 の `BRAVO-1 [07]`）。日本語はふつうの
+     ゴシックなので、**ラテンだけ**コンデンスドに替えると地続きに見える。
+     カーソルを動かすたびに桁が踊ると読めないので、**座標・コスト・射程は
+     等幅のまま**にする（--font-data）。 */
+  --font-ui:"Zen Kaku Gothic New",system-ui,"Hiragino Sans","Yu Gothic",sans-serif;
+  --font-display:"Saira Condensed","Zen Kaku Gothic New",system-ui,sans-serif;
+  --font-data:ui-monospace,SFMono-Regular,"SF Mono","Roboto Mono",Menlo,Consolas,monospace;
+
+  /* 余白は 4 の倍数の6段だけ。中間値を使わない。 */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+
+  /* 文字の大きさも6段だけ。 */
+  --t-eyebrow:10px; --t-micro:11px; --t-small:12px;
+  --t-body:13px; --t-lead:15px; --t-head:18px;
+
+  --radius-sm:0px;              /* 角は丸めない（ゲームの UI に合わせる） */
+
+  /* 影はほとんど使わない（ゲームの UI は細線で面を切る）。
+     地図の上に浮かせる板だけ、縁が溶けないよう弱い影を1枚だけ敷く。 */
+  --shadow-1:0 1px 0 color-mix(in srgb, var(--ink) 10%, transparent);
+  --shadow-2:0 2px 16px rgba(0,0,0,.35);
+
+  /* 塗りつぶしの青と、その上に載る文字色。
+     --blue（#2A87C8）に白文字だと 3.9:1 で本文サイズの AA に届かないため、
+     塗りつぶし専用に一段沈めた青を持つ（白文字で 6.9:1）。
+     暗い配色では逆に、明るい青の上に暗い文字を載せる（7.8:1）。 */
+  --blue-solid:#1B5E8C; --on-blue:#FFFFFF;
+
+  /* 危険（削除・失敗）を示す文字色。--red は図形用（射程のデッドゾーン）で
+     明るく、--paper の上では 3.2:1 しか出ない。文字にはこちらを使う。 */
+  --danger:#B3261E;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --blue-solid:#4CB1EF; --on-blue:#0B1420;
+    --danger:#FF8A80;
+    --shadow-1:0 1px 0 rgba(0,0,0,.5);
+    --shadow-2:0 2px 16px rgba(0,0,0,.6);
+  }
+}
+
+/* ── HUD（地図の上に浮かせる層）─────────────────────────────
+   **ライトでもダークでも濃い板。** ゲームのフルマップ（map-20）が、明るい
+   グレースケールの航空写真の上に濃い枠と白い細線を載せる形だったので、
+   そこに合わせる。配色の設定で枠の色が入れ替わると、同じ地図の上で
+   「ゲームと地続き」という関係のほうが崩れる。
+
+   板の不透明度は .90。中くらいの地形（#808080）の上に重ねても
+   本文（#E8EDF2）で 13:1 出る（AAA）。 */
+:root{
+  --hud:rgba(20,24,28,.90);          /* 板の面 */
+  --hud-raise:rgba(44,50,57,.96);    /* 板の中で一段持ち上げる面（ボタン） */
+  --hud-sunken:rgba(0,0,0,.28);      /* 板の中で一段沈める面（入力欄・一覧） */
+  /* **唯一の不透明な面。** `position:sticky` の帯（引き出しの見出し）だけに使う。
+     帯の裏は板の中身が通るので、1%でも透かすと文章が見出しに重なって読めない。
+     値は --hud-raise を --hud の上、さらに --void の上に重ねた結果。 */
+  --hud-band:#2B3138;
+  --hud-line:rgba(226,234,242,.22);  /* 細線（1px） */
+  --hud-line-hi:rgba(226,234,242,.45);
+  --hud-ink:#E8EDF2;                 /* 板の上の本文 … 13:1 */
+  --hud-muted:#9AA6B2;               /* 板の上の添え字 … 6.6:1 */
+  /* ゲームが「押すと進むもの」に使っている琥珀（map-31 の「分隊に参加」、
+     map-33 の「はい」）。**1画面に1つまで。**
+     --hot（未検証）と近い色だが、こちらは**面を塗る**、あちらは**細い枠の小片**で、
+     形が違う。文字も「未検証」と書いてあるので色だけに頼っていない。 */
+  --amber:#C9A227; --on-amber:#15140F;   /* 7.8:1 */
+  /* 地図の外（マップの外周）。ゲームと同じく、明るい航空写真を濃い地が囲む。 */
+  --void:#0B0E11;
+}
+
+:root{
+  /* カーソルとインクの色。ライト・ダークどちらでも 3:1 以上のコントラストが出る値。 */
+  --cursor-1:#C2410C; --cursor-2:#0369A1; --cursor-3:#15803D; --cursor-4:#7E22CE;
+  --cursor-5:#B45309; --cursor-6:#BE123C; --cursor-7:#0F766E; --cursor-8:#4338CA;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --cursor-1:#FB923C; --cursor-2:#38BDF8; --cursor-3:#4ADE80; --cursor-4:#C084FC;
+    --cursor-5:#FCD34D; --cursor-6:#FB7185; --cursor-7:#2DD4BF; --cursor-8:#818CF8;
+  }
+}
+
+:root{
+  /* 自分のインク。app.js がログイン後に var(--cursor-N) を上書きする。
+     未ログインでも道具の見本が色で出るよう既定を置く。 */
+  --me:var(--cursor-2);
+  --chrome-h:1px;   /* ヘッダ・ツールバーの仕切り線の太さ */
+}
+
+*{ box-sizing:border-box; }
+[hidden]{ display:none !important; }
+
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--font-ui);
+  display:flex; flex-direction:column;
+  /* :root が safe-area のぶん padding を持つので、その分を引かないと
+     ノッチ端末で body が画面からはみ出してページがスクロールする。 */
+  height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  overscroll-behavior:none;          /* 描いている最中に引っぱって更新されない */
+  -webkit-font-smoothing:antialiased;
+  /* ドラッグでテキストが選択されないようにする。
+     セルラベル（D8 など）には pointer-events:none を掛けてあるが、これは
+     「ポインタの当たり判定から外す」だけで、テキスト選択の範囲からは外れない。
+     そのため盤面をパンするたびにラベルが青くハイライトされていた。
+     止めるには user-select:none が別途必要。
+     #board だけに掛けるのでは足りない。選択の起点が user-select:none の
+     要素だと、Chromium は選択を近くの選択可能なテキストへ伸ばすので、
+     今度はヘッダやツールバーの文字が選ばれる（実測）。ここは文書ではなく
+     道具なので、body ごと止めて、読ませたい所（下の #placement-detail）だけ
+     戻す。ポインタイベントは止めないので、線を引く・パンする操作は変わらない。 */
+  user-select:none; -webkit-user-select:none;
+}
+
+/* ══ 盤面のページは「地図が全面、枠は浮く」════════════════════
+   **ここが今回いちばん大きい変更。**
+
+   以前は body が header / main / footer の3段で、枠が**実寸の行**として
+   高さを取っていた（1920x1080 で合計 133px、390x844 で 210px）。さらに
+   viewBox の縦横比をマップ（正方形）に合わせていたので、16:9 の画面では
+   左右にレターボックスが出て、**地図は画面の 44%**（390px では 18%）しか
+   なかった。左右の白は「余白」ではなく、全体表示の必然的な結果だった。
+
+   同じことをしている道具は他に無い（調査 2026-10-01）。Clutchbase も
+   wardogs.tools も Excalidraw も、**キャンバスは viewport の全面で、UI は
+   その上に position:absolute で浮いている**。行として高さを取るものは1つも無い。
+
+   そこで、
+
+     * 盤面のページだけ body を block にして、main を inset:0 で全面に敷く
+     * header / footer は position:absolute。**自身は pointer-events:none** で、
+       中の操作子だけ auto に戻す（＝ 板と板の隙間はどこでも地図として触れる）
+     * 枠の実寸は JS（app.js の measureChrome）が --chrome-top / --chrome-bottom に
+       書き戻す。浮いているパネルと縮尺・座標はその値だけ内側に寄る
+
+   作戦の一覧（main.create）とログイン前（main.gate）は読み物なので、
+   従来どおりの3段のまま（data-page が board 以外）。 */
+body[data-page="board"]{
+  display:block; position:relative; overflow:hidden;
+  background:var(--void);
+}
+body[data-page="board"] > main{ position:absolute; inset:0; z-index:0; }
+body[data-page="board"] > header,
+body[data-page="board"] > footer{
+  position:absolute; left:0; right:0; z-index:3;
+  padding:var(--s2);
+  background:none; border:0;
+  /* 枠そのものは触れない。中の操作子だけが触れる（Excalidraw と同じ作法）。 */
+  pointer-events:none;
+}
+body[data-page="board"] > header{ top:0; align-items:flex-start; }
+body[data-page="board"] > footer{
+  bottom:0; flex-direction:column; align-items:flex-start; gap:var(--s1);
+}
+body[data-page="board"] > header > *,
+body[data-page="board"] > footer > *{ pointer-events:auto; }
+/* 空の通知は板ごと消す（地図の上に空の箱を置かない）。 */
+body[data-page="board"] > footer > #status:empty{ display:none; }
+
+/* 地図の上に載る板（HUD）。ライトでもダークでも濃い板にする。
+   **中身の色は「トークンをこの中だけ差し替える」ことで一括で切り替える。**
+   板ごとにボタンや入力欄の色を書き直すと、新しい部品を足すたびに書き漏れる。
+   既存の規則はすべて var() で書いてあるので、器の側で意味を差し替えれば
+   中身は自動的に濃い板向きの色になる。 */
+body[data-page="board"] > header > *,
+body[data-page="board"] > footer > *,
+body[data-page="board"] #palette,
+body[data-page="board"] #zonepanel,
+body[data-page="board"] #placement-detail{
+  --panel:var(--hud-raise);
+  --paper:rgba(0,0,0,.26);
+  --ink:var(--hud-ink);
+  --muted:var(--hud-muted);
+  --line:var(--hud-line);
+  --blue:var(--blue-bright);
+  --blue-solid:var(--blue-bright);
+  --on-blue:#06121B;
+  --blue-soft:rgba(76,177,239,.20);
+  --danger:#FF9B92;
+  background:var(--hud); color:var(--hud-ink);
+  border:1px solid var(--hud-line);
+  box-shadow:var(--shadow-2);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+}
+/* 板の中のボタンは、板よりほんの少しだけ明るい面にする（細線だけで切る）。 */
+body[data-page="board"] #rail button:hover:not(:disabled),
+body[data-page="board"] header button:hover:not(:disabled),
+body[data-page="board"] .menu > summary:hover{
+  border-color:var(--hud-line-hi); background:rgba(255,255,255,.10);
+}
+/* 排他の1組だけは塗りつぶす（いま何の道具かを最優先で読ませる）。 */
+body[data-page="board"] .segmented button[aria-pressed="true"]{
+  background:var(--blue-bright); color:#06121B; font-weight:700;
+}
+
+/* ══ 読み物のページ（作戦の一覧・ログイン前）も同じ家族にする ══════════
+   **オーナー指摘（2026-10-01）: 「画面の前後で配色がかなり違います」。**
+
+   D-050 の作り直しが**盤面だけで止まっていた**。一覧とログイン前は琥珀の
+   ボタンだけ新しく、地と板は旧デザインのままで、ライトでは白地だった。
+   同じ道具の中で「盤面＝濃い HUD / 一覧＝白地」では、同じサイトに見えない。
+
+   ここは地図が無い画面なので盤面と同じ形にはならない。揃えるのは
+   **同じ板・同じ線・同じ書体・同じアクセント**の4つで、そのために
+   盤面の板とまったく同じトークンを器に当てる。地（--paper）は
+   **マップの外周（--void）と同じ色**にしてあるので、一覧から盤面へ移っても
+   地の色が 1px も変わらない。
+
+   **ライトでもダークでも濃い地にする。** HUD と同じ理由（§1）で、配色の設定で
+   一覧だけ白地に戻ると、同じ道具の中で地続きだという関係のほうが崩れる。
+   ただし一覧は**文字を読む画面**なので、暗くして読めなくなっては本末転倒。
+   本文 14.7:1 / 添え字 7.0:1 / 枠 3.9:1 を実測で確保してある
+   （e2e/plan-identity.spec.js が下限を機械で固定している）。 */
+body:not([data-page="board"]){
+  --paper:var(--void);       /* 地。盤面のマップの外周と同じ色 */
+  --panel:#171B20;           /* 板（カード・フォーム）。ダークの --panel と同値 */
+  --ink:var(--hud-ink);      /* 板の上で 14.7:1 */
+  --muted:var(--hud-muted);  /* 板の上で  7.0:1 */
+  /* **細線は盤面より一段明るいほう。** 盤面の板は航空写真の上に乗るので
+     --hud-line（.22）でも縁が立つが、平らな濃い地の上では立たない（1.9:1）。
+     ボタンと入力欄の枠は「押せる・書ける」を見分ける唯一の手掛かりなので、
+     ここは 3:1 を要る（--hud-line-hi で 3.9:1）。 */
+  --line:var(--hud-line-hi);
+  --blue:var(--blue-bright);
+  --blue-solid:var(--blue-bright);
+  --on-blue:#06121B;
+  --blue-soft:rgba(76,177,239,.20);
+  --danger:#FF9B92;
+}
+/* 面は3段。地（--paper）＜ 板（--panel）＜ 押せる面（--hud-raise）。
+   **書き込む面だけ逆に沈める**（ゲームの確認ダイアログ map-33 と同じ作法。
+   「押すと進む所」と「書き込む所」を面の向きで分ける）。 */
+/* **選ばれている札（1択の欄）はここから外す。**
+   `.choice > button[aria-checked="true"]` は塗りつぶしの青を当てるが、
+   こちらの選択子のほうが詳細度が高いので（`body` ＋ `:not()` 3つ）、
+   外さないと面だけ押せる面の色に戻り、その上に暗い `--on-blue` の文字が
+   乗って **1.4:1** になる（実測で踏んだ）。 */
+body:not([data-page="board"]) button:not(.primary):not(.quiet):not([aria-checked="true"]),
+body:not([data-page="board"]) .menu > summary,
+/* `.s-list` まで書くのは、下の `.s-list li a.open` と同じ重みでは**後に書いた
+   あちらが勝つ**ため（実測: `開く` の面が板と同じ色のままだった）。 */
+body:not([data-page="board"]) .s-list a.open,
+body:not([data-page="board"]) #to-list{ background:var(--hud-raise); }
+body:not([data-page="board"]) #create input[type="text"]{ background:var(--hud-sunken); }
+
+/* ══ 共通の型 ════════════════════════════════════════════════
+   1. ボタンは4種類だけ（既定 / primary / quiet / danger）。
+   2. 押した状態（aria-pressed）は2段階。
+      道具の切り替え（排他・いま何で描いているか）＝塗りつぶしの青。
+      表示の切り替え（on/off）＝淡い青の下地。
+      同じ強さにすると「今どの道具か」が他のトグルに埋もれる。
+   3. 面は3層。枠（--paper）＜ 盤面（--panel）＜ 浮いているパネル（--panel + 影）。
+   ═══════════════════════════════════════════════════════════ */
+
+button{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+  min-height:44px; min-width:44px; padding:0 14px;
+  background:var(--panel); color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--radius);
+  cursor:pointer; font:inherit; font-size:var(--t-body); line-height:1;
+  transition:background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+button:hover:not(:disabled){ border-color:var(--muted); }
+button:active:not(:disabled){ background:var(--blue-soft); }
+button:disabled{ opacity:.45; cursor:not-allowed; }
+button:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+
+/* 主たる操作。**1画面に1つまで。**
+   色はゲームが「押すと進む」に使っている琥珀（map-31 の「分隊に参加」、
+   map-33 の「はい」）。未検証の印と同じ系統の色だが、あちらは細枠の小片で
+   こちらは塗りつぶしの横長のバー。形が違うので取り違えない。 */
+button.primary{
+  background:var(--amber); border-color:var(--amber); color:var(--on-amber);
+  font-weight:700; letter-spacing:.04em;
+}
+button.primary:hover:not(:disabled){ filter:brightness(1.08); border-color:var(--amber); }
+button.primary:active:not(:disabled){ background:var(--amber); filter:brightness(.94); }
+
+/* 添え物の操作。枠を持たず、触れたときだけ面が出る。 */
+button.quiet{ background:transparent; border-color:transparent; color:var(--muted); }
+button.quiet:hover:not(:disabled){
+  background:color-mix(in srgb, var(--ink) 7%, transparent);
+  border-color:transparent; color:var(--ink);
+}
+
+/* 取り返しのつかない操作。quiet と併用する（列の中で赤い塊にしない）。 */
+button.danger{ color:var(--danger); }
+button.danger:hover:not(:disabled){
+  background:color-mix(in srgb, var(--danger) 12%, transparent); color:var(--danger);
+}
+
+/* 表示の切り替え（弱いほう）。 */
+button[aria-pressed="true"]{
+  background:var(--blue-soft); border-color:var(--blue); color:var(--ink);
+  font-weight:700; box-shadow:inset 0 0 0 1px var(--blue);
+}
+
+/* 排他の1組（強いほう）。塗りつぶしで「今これ」を一目で出す。 */
+.segmented{
+  display:flex; flex:none;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); overflow:hidden;
+}
+.segmented button{ border:0; border-radius:0; box-shadow:none; background:transparent; }
+.segmented button + button{ border-left:1px solid var(--line); }
+.segmented button:hover:not(:disabled){ background:color-mix(in srgb, var(--ink) 7%, transparent); }
+.segmented button[aria-pressed="true"]{
+  background:var(--blue-solid); color:var(--on-blue); box-shadow:none; border-color:transparent;
+}
+/* overflow:hidden で外側の outline が切れるので内側に出す。
+   塗りつぶしの上では青い輪郭が沈むため、紙色に替える。 */
+.segmented button:focus-visible{ outline:2px solid var(--blue); outline-offset:-3px; }
+.segmented button[aria-pressed="true"]:focus-visible{ outline-color:var(--panel); }
+
+/* ── 1択の欄（`<select>` の置き換え）─────────────────────────
+   **ブラウザに選択肢を描かせない。** `<select>` のポップアップは DOM に
+   存在せず CSS が届かないので、実機（Windows Chrome）では薄いグレー地に
+   薄いグレー文字になって読めなかった（オーナー報告 2026-10-01）。
+   `:root` の `color-scheme:dark` も効いていなかった。
+
+   畳むのをやめて**選択肢を並べる**。描くのが全部こちらの CSS になるので
+   どの OS でも同じ見た目になり、`npm run shots` にも写る。
+   詳しい経緯は public/js/plan/choice.js の冒頭。
+
+   見た目の約束は既存の「排他の1組」（.segmented）と同じ ＝ **選ばれている
+   ものだけ塗りつぶす**。新しい色も新しい型も足さない。
+   札は 44px 角（押せるものの下限）。狭い画面では折り返す。 */
+.choice{ display:flex; flex-wrap:wrap; gap:var(--s1); min-width:0; }
+.choice > button{ padding:0 var(--s3); font-weight:400; }
+.choice > button[aria-checked="true"]{
+  background:var(--blue-solid); color:var(--on-blue); font-weight:700;
+  border-color:var(--blue-solid); box-shadow:none;
+}
+/* 塗りつぶしの上では青い輪郭が沈むので、紙色に替える（.segmented と同じ手）。 */
+.choice > button[aria-checked="true"]:focus-visible{ outline-color:var(--panel); }
+/* 止めている欄は、理由（下の .field-note）とセットで薄くする。 */
+.choice[aria-disabled="true"]{ opacity:.55; }
+/* 1択の欄の見出し。`<label for>` は div に効かないので、見た目だけ label に
+   合わせた span を置いて `aria-labelledby` で繋ぐ。 */
+.field-label{ display:block; }
+
+/* 数値・座標・グリッド名。桁を揃えて比べられるようにする。 */
+.data{ font-family:var(--font-data); font-variant-numeric:tabular-nums; }
+
+/* 見出しの階層。h1 はヘッダの現在地だけ、パネルと節の見出しが h2。 */
+h1, h2{ margin:0; letter-spacing:.01em; }
+/* まとまりの見出し。ゲームの UI は節の頭に `//` を置く（map-31 の `//分隊`）。
+   区切りに線を引く代わりに、この2文字で「ここから別の話」を出す。 */
+.eyebrow, .cluster-label, .menu-head{
+  font-family:var(--font-display);
+  font-size:var(--t-eyebrow); line-height:1.4; font-weight:600;
+  letter-spacing:.16em; color:var(--muted); text-transform:uppercase;
+}
+.eyebrow{ display:block; margin:0; }
+.eyebrow::before, .cluster-label::before, .menu-head::before{
+  content:"//"; margin-right:.5em; opacity:.55; letter-spacing:0;
+}
+
+/* ── ヘッダ ───────────────────────────────────────────────
+   盤面では**2枚の小さな板**になる（左＝今どこにいるか / 右＝誰といるか）。
+   一覧とログイン前では従来どおり1本の行。 */
+header{
+  display:flex; align-items:center; gap:var(--s2) var(--s3); flex-wrap:wrap;
+  padding:var(--s2) var(--s4); background:var(--paper);
+  border-bottom:var(--chrome-h) solid var(--line);
+}
+/* 左の板。戻る矢印と現在地を1つの板にまとめる（別々の粒にしない）。 */
+.plate{ display:flex; align-items:center; gap:var(--s2); min-width:0; }
+/* 一覧の画面では横に伸びてよい（右端の畳んだメニューを押し出す）。 */
+body:not([data-page="board"]) .plate:first-of-type{ flex:1 1 auto; }
+body:not([data-page="board"]) .plate-right{ margin-left:auto; }
+body[data-page="board"] .plate{ padding:0 var(--s2) 0 0; max-width:min(52vw, 560px); }
+body[data-page="board"] .plate-right{
+  margin-left:auto; padding:var(--s1) var(--s2);
+  /* 在室が増えても板が横に伸び続けないように上限を置く（溢れたら横に送る）。 */
+  max-width:min(46vw, 560px);
+}
+/* 盤面（?id= あり）にいるときだけ出る、一覧へ戻る導線。
+   **板のいちばん左。** 他のどの要素よりも先に置く（戻り先を探させない）。 */
+#to-list{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+  flex:none; min-height:44px; min-width:44px; padding:0 var(--s3);
+  background:var(--panel); color:var(--ink); text-decoration:none;
+  border:1px solid var(--line); border-radius:var(--radius);
+  font-size:var(--t-body); font-weight:700; white-space:nowrap;
+  transition:border-color .12s ease;
+}
+#to-list::before{ content:"←"; color:var(--muted); font-weight:400; }
+#to-list:hover{ border-color:var(--muted); }
+#to-list:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+/* 盤面では矢印だけ（読み上げ用の文字は残す）。板の中の仕切りは細線1本。 */
+body[data-page="board"] #to-list{
+  background:transparent; border:0; border-right:1px solid var(--hud-line);
+  color:var(--hud-ink); padding:0; width:40px; min-width:40px;
+}
+body[data-page="board"] #to-list::before{ color:var(--hud-ink); font-weight:700; }
+body[data-page="board"] #to-list:hover{ background:rgba(255,255,255,.10); }
+body[data-page="board"] #to-list .label{
+  position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+
+/* 「サイト名 / 現在地」の2段組。一覧の画面では上段を出さず、下段がそのまま
+   サイト名になる（重複させない）。**盤面では上段を出さない** — 戻る矢印と
+   作戦名があれば現在地は足りる（同業はどこも地図ページに製品名を出していない）。 */
+.ident{ min-width:0; display:flex; flex-direction:column; justify-content:center; }
+body[data-page="board"] #brand{ display:none; }
+/* 作戦名は利用者が入れる文字列で、読めることが最優先。
+   はみ出しは省略記号で受ける。 */
+header h1{
+  font-weight:700; font-size:var(--t-lead); line-height:1.5;
+  min-width:0; max-width:46ch;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+body[data-page="board"] header h1{ font-size:var(--t-body); line-height:1.4; }
+/* マップ名は作戦名の下に添える（横に並べると粒が2つに見える）。
+   ラテン文字なのでコンデンスドで組み、ゲームの `BRAVO-1` と同じ字面に揃える。 */
+.badge{
+  font-family:var(--font-display);
+  font-size:var(--t-micro); line-height:1.5; padding:1px 6px;
+  border:1px solid var(--line); border-radius:var(--radius-sm);
+  color:var(--muted); white-space:nowrap; letter-spacing:.08em;
+}
+/* 値が入るまで空の枠を出さない（ログイン前のヘッダに謎の小箱が並ぶのを防ぐ）。 */
+.badge:empty{ display:none; }
+body[data-page="board"] #map-name{
+  align-self:flex-start; border:0; padding:0;
+  color:var(--hud-muted); text-transform:uppercase;
+}
+/* 寸法が未検証であることの印。**ヘッダには常駐させない。**
+   出すのは「その数値のすぐ隣」だけ（縮尺バー・パレットの射程とコスト・
+   配置の詳細）。注意色の細枠と「未検証」の文字で二重に符号化する。 */
+#unverified{
+  font-family:var(--font-ui); letter-spacing:0;
+  color:var(--hot); border-color:var(--hot); background:transparent;
+  font-weight:700;
+}
+/* 同じ作戦を開いている人。色は --cursor-1〜8（自分のペンと同じ色）。
+   バッジと同じ形にして、ヘッダの中で「情報の粒」として揃える。 */
+/* **人数が増えてもヘッダの段数を増やさない。**
+   想定は5〜50人（在室の上限。workers/room/src/presence.js の MAX_MEMBERS）。
+   header は flex-wrap:wrap なので、素直に並べると人数に応じて
+   段が増え、盤面（主役）が押し出される（実測: 1280px で8人のときヘッダ 61px → 145px）。
+   `flex-basis:0` にすると「元の幅ゼロ」として扱われるので**折り返しの原因にならず**、
+   余った幅まで伸びて、溢れたぶんは横スクロールになる。
+   溢れたときはスクロールバーが「まだ先にいる」の合図になるので、
+   広い画面では隠さない（狭い画面だけ隠す。§10）。 */
+#presence{
+  display:flex; flex-direction:column; align-items:stretch;
+  /* **基準幅は内容**（flex-basis:0 にすると、注記が板の外へはみ出して
+     明るい航空写真の上に素の文字が乗る。実測で読めなくなっていた）。 */
+  flex:1 1 auto; min-width:0; max-width:100%;
+}
+#presence[hidden]{ display:none; }
+/* 在室の粒は横1列。注記（下）は別の行なので、ここは wrap させない。 */
+#presence .pres-row{
+  display:flex; align-items:center; gap:var(--s2);
+  /* **人数で高さを変えない。** 粒の列は固定の高さで、溢れたら横に送る。 */
+  min-height:24px;
+  min-width:0; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden;
+  overscroll-behavior-x:contain; scrollbar-width:none;
+}
+#presence .pres-row::-webkit-scrollbar{ display:none; }
+/* **粒の幅は「名前」が決める。粒そのものには上限を置かない。**
+   以前は .pres-chip{max-width:18ch}（＝108px）で粒を頭打ちにしていたが、
+   粒の中身は「色の点 + 名前 + （あなた）」で、このうち `（あなた）` は
+   長さが固定の添え字。しかも粒が white-space:nowrap なので
+   `（あなた）` の min-content は 55px もあり、flex の自動最小サイズに
+   守られて 1px も縮まない。一方 .pres-name には min-width:0 が付いている。
+   **結果、固定の5文字が先に場所を取り、人の名前のほうだけが潰れていた。**
+
+   実測（1920px、名前が「DAICON」）:
+     .pres-chip  w=108  （= 18ch の上限ちょうど）
+     .pres-self  w=55 / scrollW=55  … 1px も縮んでいない
+     .pres-name  w=21 / scrollW=43  … 半分以下に潰れて「D…」
+   オーナーが見た「D..（あなた）」はこれ。
+
+   上限は .pres-name に移す。粒は中身ぶんの幅になり、列が溢れたら
+   これまでどおり .pres-row が横に送る（人数で高さは変わらない）。 */
+.pres-chip{
+  display:inline-flex; align-items:center; gap:5px; height:22px;
+  font-size:var(--t-micro); line-height:1.6; padding:1px 6px;
+  border:1px solid var(--line); border-radius:var(--radius-sm);
+  color:var(--ink); white-space:nowrap; overflow:hidden;
+  flex:none;
+}
+/* 自分の行だけ枠を一段立てる。色だけで示すと、色覚の差で自分が分からなくなる
+   （テキストの「（あなた）」と二重に符号化する）。 */
+.pres-chip[data-me]{ border-color:var(--muted); font-weight:700; }
+body[data-page="board"] .pres-chip{ color:var(--hud-ink); border-color:var(--hud-line); }
+body[data-page="board"] .pres-chip[data-me]{ border-color:var(--hud-line-hi); }
+/* 色の粒。**Discord のアイコンが入るときは、その輪になる。**
+   色は「ペン＝カーソル＝在室の粒＝引いた線」を結ぶ識別子（D-047 / D-068）
+   なので、**アイコンに置き換えずに中身として入れる。**
+
+   **大きさは誰でも同じ。** アイコンの有無で粒の寸法が変わると、
+   ログイン済みとゲストが混ざった列（D-072）が凸凹になる。
+   アイコンが無い人は 16px の色の丸のまま。 */
+.pres-dot{
+  position:relative; width:16px; height:16px; flex:none; border-radius:50%;
+}
+/* 輪の中身。2px ぶん色を残して、誰の色かが分かる状態を保つ。 */
+.pres-dot .avatar-img{
+  position:absolute; top:2px; left:2px; width:12px; height:12px;
+  border-radius:50%; object-fit:cover; display:block;
+  /* 読み込み中・透過のアイコンでも輪の内側が紙色で抜けないようにする。 */
+  background:var(--panel);
+}
+/* 名前は 14ch（11px なので約 84px）まで出し、超えたら省略記号。
+   日本語なら7文字、ラテンなら12文字ほど。「タカハシさんが指してるところ」が
+   成立する長さを基準にした（D-048）。全文は title から取り返せる。 */
+.pres-name{ min-width:0; max-width:14ch; overflow:hidden; text-overflow:ellipsis; }
+/* 添え字は名前の取り分を奪わない。縮むのは名前ではなくこちら。 */
+.pres-self{ color:var(--muted); font-weight:400; min-width:0; overflow:hidden; }
+body[data-page="board"] .pres-self{ color:var(--hud-muted); }
+/* ログイン無しで見ている人の印。**書けない人だと周りに分かるように。**
+   印が無いと「返事をしない人」に見えて、VC で呼びかけ続けることになる。
+   `.pres-self` と同じ扱い（縮むのはこちら。名前の取り分を奪わない）。
+   既存のトークンだけを使う——新しい色を増やすほどのことではない。 */
+.pres-guest{ color:var(--muted); font-weight:400; min-width:0; overflow:hidden; }
+body[data-page="board"] .pres-guest{ color:var(--hud-muted); }
+
+/* 「相手にも見えている」ことの注記。
+   **常駐させない。** 同業はどこも画面に散文を置いていない（調査 2026-10-01）。
+   ただし同意に関わる文なので**消しもしない**。
+     * 初めてこの道具を開いた人には、開いた時点で**出した状態**で見せる
+     * 一度読んだら畳み、以後は `i` ボタンの裏に置く（押せばいつでも読める）
+   どちらの状態かは app.js が localStorage（wardogs.plan.privacy）で覚える。 */
+.pres-priv{
+  display:block; margin-top:3px;
+  font-size:var(--t-micro); line-height:1.4; color:var(--muted);
+  /* 1行に収める。折り返しが人数（＝板の幅）で変わると、ヘッダの高さが
+     在室の数で動いてしまう。狭い画面だけ折り返しを許す（§12）。 */
+  white-space:nowrap;
+}
+body[data-page="board"] .pres-priv{ color:var(--hud-muted); }
+.pres-priv[hidden]{ display:none; }
+/* 注記を出し入れするボタン。`i` の1文字だが、読み上げには全文の案内を持たせる。
+   見た目は在室の粒と同じ大きさに抑え、**当たり判定だけ 44x44 に広げる**
+   （粒の列の中に 44px の丸を置くと、人数より印のほうが目立つ）。 */
+.pres-info{
+  position:relative;
+  flex:none; min-height:22px; min-width:22px; height:22px; padding:0;
+  font-size:var(--t-micro); font-weight:700; line-height:1;
+  border-radius:50%; color:var(--muted);
+}
+.pres-info::after{ content:""; position:absolute; inset:-11px; }
+body[data-page="board"] .pres-info{
+  color:var(--hud-muted); background:transparent; border-color:var(--hud-line);
+}
+/* 「繋ぎ直しています」「離席中」など。盤面は動いているので主張させない。 */
+.pres-note{ font-size:var(--t-micro); color:var(--muted); white-space:nowrap; flex:none; }
+
+/* 自分と、自分についての操作（共有・ログアウト）。**1つのメニューに畳む。**
+   枠に3つ並べても試合中に押すのは稀で、面積のほうが高くつく
+   （調査 2026-10-01 §3-7: 同業はどこも畳んでいる）。 */
+#account{ flex:none; }
+#account > summary{ gap:var(--s2); min-width:0; }
+#account .menu-body{ right:0; left:auto; top:calc(100% + var(--s2)); bottom:auto; }
+/* **これがアカウントであることの印。** 名前だけだと、短い名前や記号だけの
+   表示名のときに「何のボタンか」が読めない。素材は持ち込まず、線画1つで描く
+   （ゲームの UI も塗らない線画で記号を出している）。 */
+.acct-icon{
+  width:16px; height:16px; flex:none;
+  fill:none; stroke:currentColor; stroke-width:1.5;
+  stroke-linecap:round; opacity:.75;
+}
+/* 名前は 14ch（13px なので約 99px）まで出す。日本語なら7文字ほど。
+   Discord の表示名は日本語も絵文字もありえるので、幅ではなく**文字数**で
+   切り、全文は summary の title と menu-body の #who に残す。 */
+#account-name{
+  min-width:0; max-width:14ch;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#who{
+  font-size:var(--t-small); color:var(--muted);
+  min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  padding:0 var(--s2) var(--s1);
+}
+body[data-page="board"] #who{ color:var(--hud-muted); }
+#share, #logout{ flex:none; }
+
+/* この作戦の公開設定。**作った人にだけ出る。**
+   置き場は**左の板**（＝この作戦の板）。右の板（在室）に混ぜると、固定幅の札が
+   人の名前と幅を奪い合って名前のほうが潰れる（§5 の教訓。実測で 390px の
+   #presence が 200px → 168px になった）。
+   開く向きは下（棚のメニューは上に開くが、こちらはヘッダ）。左の板にあるので
+   左端を揃える。 */
+#visibility{ flex:none; }
+#visibility .menu-body{ left:0; right:auto; top:calc(100% + var(--s2)); bottom:auto; }
+/* 札は3枚で、文が長い（結果で書くため）。横に3つ並べると板が画面幅を超えるので
+   縦に積む。1択の欄の見た目（選ばれたものだけ塗る）はそのまま。 */
+#visibility-choice{ flex-direction:column; min-width:240px; }
+#visibility-choice > button{ width:100%; justify-content:flex-start; text-align:left; }
+/* 選んだあと何が起きるか。読む文なので折り返しを許す（.menu-body は nowrap を
+   前提にしていない。幅は上の min-width が決める）。 */
+#visibility-note{
+  margin:0; padding:var(--s1) var(--s2);
+  font-size:var(--t-small); line-height:1.5; color:var(--muted);
+  max-width:300px;
+}
+body[data-page="board"] #visibility-note{ color:var(--hud-muted); }
+/* 「見るだけ」の札。書き込めない理由なので、未検証と同じく**色だけに頼らず**
+   文字で言う。注意色（--hot）は未検証が使っているので、こちらは枠だけ立てる。 */
+#read-only{
+  flex:none; font-family:var(--font-ui); letter-spacing:0; font-weight:700;
+  color:var(--ink); border-color:var(--muted);
+}
+body[data-page="board"] #read-only{ color:var(--hud-ink); border-color:var(--hud-line-hi); }
+

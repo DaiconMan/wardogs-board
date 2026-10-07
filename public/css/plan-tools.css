@@ -1,0 +1,126 @@
+/* /plan のスタイル: フッターの道具立てと状態表示
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── 道具立て（フッター）──────────────────────────────────
+   フッターは「道具の棚」と「状態表示」の2つを持つ。
+   道具が無い画面（ログイン前・作戦の一覧）では棚ごと畳み、状態表示だけ残す。
+   押せないボタンを15個並べても、できることは1つも増えない。 */
+footer{
+  display:flex; align-items:flex-end; gap:var(--s3); flex-wrap:wrap;
+  padding:var(--s2) var(--s4); background:var(--paper);
+  border-top:var(--chrome-h) solid var(--line);
+}
+/* 棚は1本。広い画面では折り返さない幅に収まる（常設は5かたまりだけ）。
+   狭い画面だけ横スクロールにする（§10）。ここで overflow を付けないのは、
+   畳んだメニューが浮いて開くときに切り落とされるため。 */
+#rail{
+  display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap;
+  min-width:0; max-width:100%; padding:var(--s1);
+}
+/* 道具が無い画面では、フッターは状態表示だけの細い帯にする。 */
+footer:has(> #rail[hidden]){ padding:var(--s1) var(--s4); }
+/* 役割ごとのまとまり。**見出しの文字は出さない。**
+   「道具」「置く」「見る」の3語は一度読めば足りるもので、毎回出すと
+   棚が1段ぶん高くなる（調査 2026-10-01 §3-4: 同業はどこも出していない）。
+   読み上げのための名前としては残す（aria-labelledby の参照先）。 */
+.cluster{ display:flex; align-items:center; gap:var(--s2); flex:none; }
+.cluster + .cluster{
+  border-left:1px solid var(--line);
+  padding-left:var(--s2);
+}
+body[data-page="board"] .cluster + .cluster{ border-left-color:var(--hud-line); }
+.cluster-label{
+  position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+.cluster-row{ display:flex; align-items:center; gap:var(--s2); }
+
+/* 「想定するパターンがまだ選ばれていない」印。
+   この作戦で出る円が決まっていないことを、引き出しを開けなくても分かるようにする
+   （オーナー報告: 「円を出すのに導線が長すぎます」）。
+   出すのは**そのマップにパターンが登録されていて、まだ選んでいないとき**だけ。
+   色は --hot（「まだ確かめていない」の色）で、赤（失敗）とは分ける。 */
+#toggle-zones[data-unset="true"]::after{
+  content:""; width:8px; height:8px; border-radius:50%;
+  background:var(--hot); box-shadow:0 0 0 1px var(--panel) inset;
+  flex:none;
+}
+
+/* ペンのつまみに自分のインク色を出す。色は選べないが、常に見えている。 */
+#tool-pen::before{
+  content:""; width:12px; height:12px; border-radius:50%;
+  background:var(--me); box-shadow:0 0 0 1px var(--panel) inset;
+  flex:none;
+}
+/* 塗りつぶしになったときは、下地との境目が消えないよう白で縁取る。 */
+#tool-pen[aria-pressed="true"]::before{ box-shadow:0 0 0 1px var(--on-blue) inset; }
+
+/* 太さは数値でなく線の見本で選ぶ。見本は自分のインク色で引く。
+   ペンに従属する設定なので、道具の切り替えのすぐ隣に置いて隙間を詰める。 */
+.widths{ display:flex; gap:2px; flex:none; }
+.widths button{ padding:0 10px; }
+.widths .bar{ display:block; width:22px; background:var(--me); border-radius:2px; }
+.widths button[data-w="1"] .bar{ height:2px; }
+.widths button[data-w="2"] .bar{ height:4px; }
+.widths button[data-w="3"] .bar{ height:7px; }
+
+/* まとまりで押すもの（ズーム）は隙間を詰めて1かたまりに見せる。 */
+.group{ display:flex; gap:2px; flex:none; }
+.group button{ padding:0 10px; }
+/* 拡大・縮小は記号1文字。文字が小さいと押しどころが分からないので大きめに。 */
+#zoom-in, #zoom-out{ font-size:20px; padding:0; }
+
+/* 背景の見せ方。3つのうち1つを選ぶ設定で、一度決めたら滅多に触らない。
+   常時3つ並べる価値がないので畳み、いま何かをボタンの上に出す。 */
+.menu{ position:relative; flex:none; }
+.menu > summary{
+  display:inline-flex; align-items:center; gap:var(--s2);
+  min-height:44px; padding:0 var(--s3);
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  font-size:var(--t-body); line-height:1; white-space:nowrap;
+  cursor:pointer; list-style:none;
+  transition:border-color .12s ease;
+}
+.menu > summary::-webkit-details-marker{ display:none; }
+.menu > summary::after{ content:"▾"; color:var(--muted); }
+.menu[open] > summary::after{ content:"▴"; }
+.menu > summary:hover{ border-color:var(--muted); }
+.menu > summary:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+.menu[open] > summary{ border-color:var(--blue); box-shadow:inset 0 0 0 1px var(--blue); }
+.menu-label{ color:var(--muted); font-size:var(--t-small); }
+.menu-value{ font-weight:700; }
+/* 棚は画面の下端にあるので、開く向きは上。 */
+.menu-body{
+  position:absolute; right:0; bottom:calc(100% + var(--s2)); z-index:5;
+  display:flex; flex-direction:column; gap:var(--s1);
+  min-width:200px; padding:var(--s2);
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow-2);
+}
+.menu-body .menu-head{
+  margin:0; padding:var(--s1) var(--s2);
+}
+.menu-body .menu-head + *{ margin-top:0; }
+.menu-body .group{ flex-direction:column; gap:var(--s1); }
+.menu-body button{ width:100%; justify-content:flex-start; padding:0 var(--s3); }
+/* 編集できない状態（読み込み前・API 不通）では、ボタンと同じように止める。
+   <summary> は disabled を持てないので見た目と当たり判定で表す。 */
+#rail[data-disabled="true"] .menu > summary{ opacity:.45; pointer-events:none; }
+
+/* 状態表示。どの画面でも同じ唯一の通知先で、**いま選んでいる道具の説明**も
+   ここに出る（Excalidraw の HintViewer と同じ役。通知の出口を増やさない）。
+   盤面では棚のすぐ上に1行の板として浮き、空なら板ごと消える。
+   非同期処理の完了時にここを無条件で消さない（DECISIONS D-026）。 */
+#status{
+  flex:1 1 220px; min-width:0; margin:0; align-self:center;
+  font-size:var(--t-body); line-height:1.5; color:var(--muted);
+}
+body[data-page="board"] #status{
+  flex:none; align-self:flex-start; max-width:min(100%, 560px);
+  padding:var(--s1) var(--s2); font-size:var(--t-small);
+}
+#status:not(:empty)::before{ content:"▸ "; color:var(--blue); font-weight:700; }
+#status.err{ color:var(--danger); font-weight:700; }
+#status.err:not(:empty)::before{ content:"⚠ "; color:var(--danger); }
+body[data-page="board"] #status.err{ color:#FF9B92; }
+body[data-page="board"] #status.err:not(:empty)::before{ color:#FF9B92; }
+

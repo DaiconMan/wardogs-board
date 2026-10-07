@@ -1,0 +1,148 @@
+/* /plan のスタイル: 画面が狭いときの上書き。**必ず最後に読む。**
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── 画面が狭いとき ─────────────────────────────────────── */
+/* 棚は幅に関係なく1段（横スクロール）。幅が足りなくなったら、文字の大きさでは
+   なくボタンの左右の余白から詰める。 */
+@media (max-width:1400px){
+  footer button, .menu > summary{ padding:0 10px; }
+  .widths button, .group button{ padding:0 8px; }
+}
+/* 画面が狭いときは、枠に使う面積を削って地図に回す。 */
+@media (max-width:560px){
+  header{ padding:6px var(--s3); gap:6px var(--s2); }
+  header h1{ font-size:var(--t-body); }
+  /* 戻るは矢印だけにする。読み上げ用の文字は残す（消すと名前が無くなる）。 */
+  #to-list{ padding:0; min-width:44px; justify-content:center; gap:0; }
+  #to-list .label{
+    display:inline-block; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+  }
+  .ident{ flex:1 1 120px; }
+  .plate{ max-width:none; }
+  /* この幅では畳んだアカウントの名前も一段詰める（在室の列に場所を残す）。 */
+  #account-name{ max-width:8ch; }
+  /* この幅では在室に**自分の行を与える**。右肩に押し込むと 140px まで潰れて
+     名前も注記も読めない（実測で 28px まで潰れたことがある）。
+     「誰が今この作戦を見ているか」は R0 の唯一の機能なので、読めないまま
+     置き場所だけ確保するほうが悪い。枠は浮いているので、段が増えても
+     地図の面積は減らない（覆う量が増えるだけ）。 */
+  body[data-page="board"] .plate{ max-width:100%; }
+  body[data-page="board"] .plate-right{ flex:1 1 100%; margin-left:0; }
+  /* この幅では名前の取り分を一段詰める（「（あなた）」は下で隠している）。
+     10ch ＝ 約60px で、日本語なら5文字ぶん。 */
+  .pres-name{ max-width:10ch; }
+  /* この幅では注記が1行に収まらないので、折り返しを許す（自分の行がある）。 */
+  .pres-priv{ white-space:normal; }
+  .pres-self{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+  }
+
+  /* 390px では「移動／ペン／消す／地名／戻す／建造物／円とマス」までを
+     横に送らずに見せたい。左右の余白を一段詰めて、そのぶんを棚に回す。 */
+  footer{ padding:var(--s2); gap:var(--s2); }
+  /* 棚は1段に固定して横スクロール。段を増やすとそのぶん地図が隠れる。
+     **道具のまとまりを先頭に置いたまま**にする（order で入れ替えない）。
+     以前は「置く」を先頭にしていたが、そのせいで初期状態で選ばれている
+     「移動」が画面の外へ出て、**いま何の道具かが最初の画面で読めなかった**
+     （調査 2026-10-01 §4.2-4）。ラベルを短くしたので、390px でも
+     「移動／ペン／消す／地名／戻す／建造物」までがスクロールなしで入る。 */
+  #rail{
+    flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; scrollbar-width:none;
+    /* 390px では 1px でも惜しい。左右の内側の余白は落とす（上下は残す）。 */
+    padding:var(--s1) 0;
+    /* ボタンの途中で止まらないようにする。半分のボタンは「続きがある」ではなく
+       「壊れている」に見える（実機で「建造物」が「造物」と見えていた）。 */
+    scroll-snap-type:x proximity;
+  }
+  /* まとまりの仕切りも詰める。ここで 8px 稼ぐと「円とマス」まで入る。 */
+  .cluster + .cluster{ padding-left:var(--s1); }
+  #rail > .cluster{ scroll-snap-align:start; }
+  #rail::-webkit-scrollbar{ display:none; }
+  /* まだ送れる向きの端を、実際に薄くして消す。data-overflow は app.js が付ける。
+     紙色を上から重ねる方法では駄目だった: ボタンは白、棚の下地は #E9EEF3 で
+     明度差がほとんど無く、実機の画面では「ぼかし」が見えない。
+     mask なら下地の色に関係なく必ず薄くなるので、切れているのではなく
+     「続いている」と読める。 */
+  #rail[data-overflow="right"]{
+    -webkit-mask-image:linear-gradient(to left, transparent, #000 24px);
+    mask-image:linear-gradient(to left, transparent, #000 24px);
+  }
+  #rail[data-overflow="left"]{
+    -webkit-mask-image:linear-gradient(to right, transparent, #000 24px);
+    mask-image:linear-gradient(to right, transparent, #000 24px);
+  }
+  #rail[data-overflow="both"]{
+    -webkit-mask-image:linear-gradient(to right,
+      transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    mask-image:linear-gradient(to right,
+      transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+  /* 横スクロールの入れ物は、はみ出した子（浮かせたメニュー）を切り落とす。
+     そのため狭い画面では背景メニューを浮かせず、棚の続きとして横に開く。
+     位置合わせの数値を持たずに済み、切り取られる余地も無い。 */
+  #rail .menu-body{
+    position:static; flex-direction:row; align-items:center;
+    min-width:0; padding:0 0 0 var(--s1);
+    background:transparent; border:0; border-radius:0; box-shadow:none;
+  }
+  #rail .menu-body .menu-head{ display:none; }
+  /* ただし2つ目以降の見出し（「重ねるもの」「地図にあるもの」）は残す。
+     これが消えると「射程を表示」が4つ目の背景の選択肢に見える。 */
+  #rail .menu-body .menu-head ~ .menu-head{
+    display:block; padding:0 var(--s1); white-space:nowrap;
+  }
+  #rail .menu-body .group{ flex-direction:row; }
+  #rail .menu-body button{ width:auto; justify-content:center; }
+  .cluster{ flex:none; }
+  .cluster-row{ gap:var(--s1); }
+  footer button, .menu > summary{ padding:0 var(--s2); font-size:var(--t-small); }
+  .widths button, .group button{ padding:0 6px; }
+
+  .sheet{ padding:var(--s4) var(--s3) var(--s5); gap:var(--s4); }
+
+  /* 狭い画面では引き出しが盤面をほぼ覆ってしまうので、高さを抑える
+     （畳んだ状態なら3行なので、これでも中身は全部見える）。
+     項目を選んだ時点で app.js が畳む（置きたい場所を自分で隠さない）。 */
+  #palette, #zonepanel{ left:6px; right:6px; width:auto; }
+  /* **引き出しと検視台で画面を半分ずつ使う。** 枠が浮いたぶん、どちらも
+     上下に伸びやすくなって重なった（実機で「車輌」の見出しが詳細パネルに
+     隠れて押せなくなった）。境目を 48% / 52% で決め打ちにして、両方開いても
+     重ならないようにする。 */
+  body[data-page="board"] #palette{
+    top:calc(var(--chrome-top, 56px) + 6px); bottom:48%; max-height:none;
+  }
+  /* エリアのパネルは中身が決まっている（小見出し＋案内＋チップ5つ＋集計）。52% だと
+     最後の集計の行が途中で切れて「壊れている」ように見えるので、収まる高さまで許す。 */
+  body[data-page="board"] #zonepanel{
+    top:calc(var(--chrome-top, 56px) + 6px); bottom:auto; max-height:70%;
+  }
+  /* 詳細は下から出すシート。棚の上で止める（棚と重ねない）。 */
+  #placement-detail{ left:6px; right:6px; width:auto; }
+  body[data-page="board"] #placement-detail{
+    top:52%; bottom:calc(var(--chrome-bottom, 64px) + 6px); max-height:none;
+  }
+  /* 詳細が下半分を占めるので、縮尺と座標は上へ逃がす。
+     列（A〜P）の帯は寄ると盤面の上端に張り付くので、そのぶん下へ逃がす。 */
+  #map-readouts{
+    right:6px; bottom:auto;
+    top:calc(var(--chrome-top, 56px) + 6px + var(--gut-h, 16px));
+  }
+  /* 案内を横に足すと箱が広がりすぎるので、**下の行へ落とす**。
+     消してしまうと、指で使う人がコピーできることに気づけない。
+
+     flex のままでは折り返せない。この箱は幅が内容任せ（shrink-to-fit）なので、
+     行が溢れることが無く flex-wrap が発火しない。通常フロー（block）に戻す。 */
+  #readout{ display:block; text-align:right; }
+  #readout .copyhint{ display:block; }
+  /* flex の gap が効かなくなるぶんを margin で補う。 */
+  #readout .paint{ margin-right:var(--s2); }
+}
+@media (max-width:420px){
+  footer{ padding:var(--s2) var(--s2); }
+  footer button, .menu > summary{ padding:0 6px; }
+  .widths button, .group button{ padding:0 4px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; animation:none !important; }
+}

@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>作戦プランナー — WARDOGS</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- スタイルは public/css/ に分けてある（plan.html が 2,300行を超えて、
+     どの作業も同じファイルを触る状態になっていたため）。
+
+     **この6枚は読む順が意味を持つ。** CSS は後に読んだほうが勝つので、
+     並べ替えると見た目が変わる。特に plan-narrow.css（狭い画面の上書き）は
+     必ず最後。新しく足すときも、どの段に入るかを決めてから入れること。
+
+     キャッシュは _headers の /css/* が max-age=0 にしている（D-027 と同じ理由。
+     新しい HTML ＋ 古い CSS の組み合わせを作らない）。 -->
+<link rel="stylesheet" href="/css/plan-base.css">
+<link rel="stylesheet" href="/css/plan-board.css">
+<link rel="stylesheet" href="/css/plan-tools.css">
+<link rel="stylesheet" href="/css/plan-list.css">
+<link rel="stylesheet" href="/css/plan-panels.css">
+<link rel="stylesheet" href="/css/plan-narrow.css">
+</head>
+<body data-page="board">
+
+<header>
+  <!-- 左の板＝「いまどこにいて、どこへ戻れるか」。
+       盤面では戻る矢印・作戦名・マップ名が1枚の板にまとまる。
+       粒を3つ並べるより、1枚にしたほうが目が止まる回数が減る。 -->
+  <div class="plate">
+    <!-- 盤面にいるときだけ出る（app.js が hidden を外す）。
+         読み込みに失敗したときこそ要るので、プランの取得より前に出す。 -->
+    <a id="to-list" href="/plan" hidden><span class="label">作戦の一覧</span></a>
+    <div class="ident">
+      <span class="eyebrow" id="brand" hidden>作戦プランナー</span>
+      <h1 id="title">作戦プランナー</h1>
+      <span class="badge" id="map-name"></span>
+    </div>
+    <!-- 「見るだけ」で公開された作戦を、書き込めない人に見せる札。
+         道具の棚ごと押せなくなるので、理由がどこにも無いと「壊れている」に
+         見える。作成者には出さない（あちらは隣の公開設定の欄に値が出ている）。 -->
+    <span class="badge" id="read-only" hidden>見るだけ</span>
+    <!-- この作戦を誰が見られるか。**作戦の画面に置く**（一覧ではなく）。
+         中身を見ながら決めるものなので。**作った人にだけ出す**（app.js が
+         hidden を外す）。他の人には上の「見るだけ」の札だけが出る。
+
+         **置き場は左の板（＝この作戦の板）。** 右の板（在室）に混ぜると、
+         固定幅の札が人の名前と幅を奪い合って**名前のほうが潰れる**
+         （design-system §5 の教訓。実測で 390px の #presence が
+         200px → 168px になって e2e が落ちた）。左の板なら、代わりに縮むのは
+         作戦名で、あちらは ellipsis を持っているので読み方が壊れない。
+
+         `<select>` は使わない（D-051。実機で選択肢が読めなくなる）。
+         選択肢は .choice（ARIA radiogroup）として畳まずに並べる。 -->
+    <details class="menu" id="visibility" hidden>
+      <summary>
+        <span class="menu-label">公開</span>
+        <span class="menu-value" id="visibility-current">なし</span>
+      </summary>
+      <div class="menu-body">
+        <p class="menu-head" id="visibility-head">この作戦を誰が見られるか</p>
+        <div id="visibility-choice" class="choice" role="radiogroup"
+             aria-labelledby="visibility-head"></div>
+        <!-- 選んだあと何が起きるかを1文で。札の文字だけでは
+             「一覧」がどこの一覧なのかが伝わらない。 -->
+        <p id="visibility-note"></p>
+      </div>
+    </details>
+  </div>
+  <!-- 右の板＝「誰といるか」。在室一覧と、自分についての操作。 -->
+  <div class="plate plate-right">
+    <!-- 同じ作戦を今開いている人。名前と色だけ（カーソルは Phase R1）。
+         繋がらなくても盤面は全部動くので、失敗したらこの箱が消えるだけ。 -->
+    <span id="presence" aria-live="polite" aria-label="この作戦を開いている人" hidden></span>
+    <!-- 自分の名前・共有・ログアウトは1つに畳む。試合中に押す頻度より、
+         枠が食う面積のほうが高くつく（調査 2026-10-01 §3-7）。
+
+         **ただし畳んでいても「誰の、何のボタンか」が目で分かること。**
+         以前は名前の頭1文字だけを出していたので、画面には `D ▾` としか
+         出ず、何を指すのか読めなかった（オーナー指摘 2026-10-01）。
+         人型の印（これがアカウントであること）と名前（それが誰か）の
+         2つを並べる。aria-label は app.js が「自分の設定（名前）」にする。 -->
+    <details class="menu" id="account" hidden>
+      <summary aria-label="自分の設定">
+        <svg class="acct-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="8" cy="5.4" r="2.9"/>
+          <path d="M2.4 14.4a5.6 5.6 0 0 1 11.2 0"/>
+        </svg>
+        <span class="menu-value" id="account-name">自分</span>
+      </summary>
+      <div class="menu-body">
+        <p class="menu-head">自分</p>
+        <span id="who"></span>
+        <button id="share" class="quiet" type="button" hidden>共有URLをコピー</button>
+        <!-- ログイン無しで見ている人の入口。**ログアウトと同じ引き出しの中**に
+             置く（入る口と出る口が同じ場所なら、探す先が1つで済む）。
+             どちらか一方だけが出る（app.js が hidden を外す）。
+
+             `<a>` ではなく `<button>`。`.quiet` も `button` にしか効かず、
+             ログイン前の `#login` も同じやり方（押したら飛ぶ）なので、
+             同じ操作に2つの仕組みを持たない。 -->
+        <button id="to-login" class="quiet" type="button" hidden>Discord でログイン</button>
+        <button id="logout" class="quiet" type="button" hidden>ログアウト</button>
+      </div>
+    </details>
+  </div>
+</header>
+
+<main>
+  <svg id="board" xmlns="http://www.w3.org/2000/svg" aria-label="作戦マップ">
+    <defs>
+      <!-- 背景地図の見せ方。元画像はカラーのまま1種類だけ置き、表示時に加工する。
+           インク（--cursor-* の8色）が地形に埋もれないことが目的なので、
+           既定はモノクロ。ライトとダークで別の定義を使う（ダークは暗く沈める）。 -->
+      <filter id="map-mono" color-interpolation-filters="sRGB">
+        <feColorMatrix type="saturate" values="0"/>
+        <feComponentTransfer>
+          <feFuncR type="linear" slope="1.08" intercept="-0.08"/>
+          <feFuncG type="linear" slope="1.08" intercept="-0.08"/>
+          <feFuncB type="linear" slope="1.08" intercept="-0.08"/>
+        </feComponentTransfer>
+      </filter>
+      <filter id="map-mono-dark" color-interpolation-filters="sRGB">
+        <feColorMatrix type="saturate" values="0"/>
+        <feComponentTransfer>
+          <feFuncR type="linear" slope="0.62" intercept="-0.04"/>
+          <feFuncG type="linear" slope="0.62" intercept="-0.04"/>
+          <feFuncB type="linear" slope="0.62" intercept="-0.04"/>
+        </feComponentTransfer>
+      </filter>
+      <!-- 高コントラスト。2値ではなく5段。2値だと道路・森・農地・高低差が
+           閾値次第で同じ塊に潰れ、地形から置き場所を選べなくなる。
+           いちばん上を純白にしないのは、雪や岩のざらつきが白飛びして
+           模様だけが目立つのを抑えるため。 -->
+      <filter id="map-posterize" color-interpolation-filters="sRGB">
+        <feColorMatrix type="saturate" values="0"/>
+        <feComponentTransfer>
+          <feFuncR type="discrete" tableValues="0 0.28 0.5 0.72 0.92"/>
+          <feFuncG type="discrete" tableValues="0 0.28 0.5 0.72 0.92"/>
+          <feFuncB type="discrete" tableValues="0 0.28 0.5 0.72 0.92"/>
+        </feComponentTransfer>
+      </filter>
+      <filter id="map-posterize-dark" color-interpolation-filters="sRGB">
+        <feColorMatrix type="saturate" values="0"/>
+        <feComponentTransfer>
+          <feFuncR type="discrete" tableValues="0 0.13 0.26 0.4 0.55"/>
+          <feFuncG type="discrete" tableValues="0 0.13 0.26 0.4 0.55"/>
+          <feFuncB type="discrete" tableValues="0 0.13 0.26 0.4 0.55"/>
+        </feComponentTransfer>
+      </filter>
+      <!-- エリアの塗りパターン（敵陣＝斜線 / 最重要＝点描 / 危険予測＝格子）。
+           viewBox を持たせてあるので、タイルの width/height を書き換えると中身ごと
+           拡縮する。app.js の applyView() が PATTERN_PX × metersPerPx() を入れるので、
+           寄っても斜線の間隔は画面上で一定のまま（<pattern> は自動では
+           画面固定にならない。マーカーの scale と同じ手口で打ち消す）。
+           色は CSS 側（#area-pat-* の .pat-*）で当てる。 -->
+      <pattern id="area-pat-enemy" data-area-pattern patternUnits="userSpaceOnUse"
+               width="8" height="8" viewBox="0 0 8 8" preserveAspectRatio="none">
+        <rect class="pat-bg" width="8" height="8"/>
+        <path class="pat-line" d="M -2 2 L 2 -2 M 0 8 L 8 0 M 6 10 L 10 6"/>
+      </pattern>
+      <pattern id="area-pat-key" data-area-pattern patternUnits="userSpaceOnUse"
+               width="8" height="8" viewBox="0 0 8 8" preserveAspectRatio="none">
+        <rect class="pat-bg" width="8" height="8"/>
+        <circle class="pat-dot" cx="4" cy="4" r="1.3"/>
+      </pattern>
+      <pattern id="area-pat-risk" data-area-pattern patternUnits="userSpaceOnUse"
+               width="8" height="8" viewBox="0 0 8 8" preserveAspectRatio="none">
+        <rect class="pat-bg" width="8" height="8"/>
+        <path class="pat-line" d="M 0 4 L 8 4 M 4 0 L 4 8"/>
+      </pattern>
+    </defs>
+    <!-- 背景は2層。下に overview 1枚（0〜16000m 全体）を常時敷き、その上に
+         今のズームに合うタイルを載せる。タイルが届くまでの間も背景が途切れない。
+         フィルタは2層をまとめた <g> にかけるので、どちらにも同じように効く。 -->
+    <g id="basemap-layer">
+      <image id="basemap" x="0" y="0" width="0" height="0"></image>
+      <g id="basemap-tiles"></g>
+    </g>
+    <!-- エリア（自陣・敵陣・中立・最重要・危険予測）。**チームが手で塗る見立て**で、
+         ゲームが決めた円（下の #zone-preset）とは別物。
+         地図の上・グリッドの下に敷く（1km の罫線とガターの見出しが塗りに
+         埋もれないように）。種類ごとに、塗り・外周・種類名の3つを持つ。
+         中身（path の d と文字）は app.js の renderAreas() が付ける。
+         種類名の <text> は塗ってあるときだけ作る（空の文字要素を地図の上に
+         置いたままにしない。§8「地図の上に文字を撒かない」の実装上の対）。
+         data-cells は今そのエリアが何マスかで、目で数えるときと e2e が見る。 -->
+    <g id="areas" data-names="on">
+      <g class="area" data-kind="own" data-cells="0"><path class="area-fill"/><path class="area-halo"/><path class="area-edge"/></g>
+      <g class="area" data-kind="enemy" data-cells="0"><path class="area-fill"/><path class="area-halo"/><path class="area-edge"/></g>
+      <g class="area" data-kind="neutral" data-cells="0"><path class="area-fill"/><path class="area-halo"/><path class="area-edge"/></g>
+      <g class="area" data-kind="key" data-cells="0"><path class="area-fill"/><path class="area-halo"/><path class="area-edge"/></g>
+      <g class="area" data-kind="risk" data-cells="0"><path class="area-fill"/><path class="area-halo"/><path class="area-edge"/></g>
+    </g>
+    <g id="grid-fine"></g>
+    <g id="grid"></g>
+    <g id="zones"></g>
+    <!-- コントロールエリア（ゲームが決めた円）。**実寸（メートル）で描く。**
+         半径 500m（Ozeti は 550m）は意味のある寸法なので、地図と同じ縮尺で
+         伸縮させる（射程リング・陣営スポーンと同じ扱い）。
+         上のエリア塗り（#areas）とは、円 vs 1km マス、線 vs パターン、
+         無彩色 vs 種別色の3点で区別する。中身は app.js の renderZonePreset()。 -->
+    <g id="zone-preset"></g>
+    <!-- 陣営スポーン（セーフゾーン）。マップ固定で、一辺およそ 480m の
+         回転した正方形。実寸（メートル）で描くので地図と同じ縮尺で伸縮する。
+         中身は app.js の renderSpawns() が入れる。 -->
+    <g id="spawns"></g>
+    <!-- ドリルタワー（マップ固定の設備）。ゲームが持っている物なので、
+         チームが置いた物（#placements）より下に敷く。線画・無彩色・当たり判定
+         なしで、「触れない＝自分たちの持ち物ではない」ことを形でも示す。
+         中身は app.js の renderTowers() が入れる。 -->
+    <g id="towers" data-names="off"></g>
+    <!-- 射程リングと FOB の建築範囲。実寸（メートル）で描くので、地図と同じ
+         縮尺で伸縮する。インクとマーカーの下に敷き、当たり判定は持たせない
+         （最大射程 684m の円が盤面の広い面積を覆うため、上に載せると
+         その中では線も引けず消しゴムも効かなくなる）。 -->
+    <g id="ranges"></g>
+    <!-- ホットゾーンの円（半径 85m）。**実寸（メートル）で描く。**
+         置いたのはチームだが、円の大きさはゲームが決めている寸法なので、
+         射程リングと同じく地図と同じ縮尺で伸縮させる。
+         射程とは別の層にしてあるのは、「射程を表示」で一緒に消えてはいけないから
+         （これは射程ではなく、人数が2倍に数えられる範囲）。
+         当たり判定は持たない（掴みどころは中心のピン1つだけ）。
+         中身は app.js の renderPlacement() が createHotzone() で入れる。 -->
+    <g id="hotzones"></g>
+    <g id="ink"></g>
+    <!-- 他の人が**引いている最中**の線（Phase R2b）。確定した線（#ink）の
+         すぐ上に敷く。**ここに入るものは D1 に無い**——引いた本人が保存して
+         `chg` が届くと、確定した線が #ink に入り、ここの線は消える。
+         押せない（消しゴムが「まだ無い線」を掴まないように）。
+         中身は board/liveink.js の holdInk() が入れる。 -->
+    <g id="live-ink" aria-hidden="true"></g>
+    <!-- 地名（コールアウト）。「あの丘」「工場」のような、その作戦で使う呼び名。
+         点＋文字で描く（配置マーカーと見た目をはっきり分ける）。インクより上に
+         置くのは、線の下に隠れた地名を押せなくなるのを避けるため。
+         data-names は app.js が付ける（広く見ているときは名前を伏せる）。 -->
+    <g id="callouts" data-names="off"></g>
+    <!-- 配置のマーカー。画面上で一定の大きさ（実寸は未実測なので描けない）。
+         押すと詳細が出るので、当たり判定はここだけが持つ。 -->
+    <g id="placements"></g>
+    <!-- 他の人のカーソル（Phase R1）。**いちばん上**に置く。他人が指している
+         場所が自分の置いた物の下に隠れると「ここ」が伝わらない。
+         **マップ座標系に置く**ので、各自のズームとパンが違っても同じ地点を指す
+         （送り合うのは画面 px ではなくマップのメートル座標）。
+         中身は board/cursor.js の showCursors() が入れる。 -->
+    <g id="cursor-layer" aria-hidden="true"></g>
+  </svg>
+  <!-- 1km セルの見出し（ガター）。列（A〜P）は地図の上端の外、行（1〜16）は
+       左端の外に出す。海図・方眼図と同じ形で、**文字を地図の上に載せない**。
+       SVG ではなく HTML なのは、盤面の外にいてズームの影響を受けないから
+       （viewBox から font-size を逆算する計算が丸ごと要らなくなる）。
+       位置は app.js の updateGutter() が state.view から毎回決める。 -->
+  <div id="gutter" aria-hidden="true">
+    <div id="gutter-cols" hidden></div>
+    <div id="gutter-rows" hidden></div>
+  </div>
+  <!-- 寄ったときだけ出す、セルの真ん中の名前（最大4個）。ガターだけだと
+       「今どのセルの中にいるか」を見失うので、薄く添える。 -->
+  <div id="cell-names" aria-hidden="true"></div>
+  <!-- 縮尺と座標は**同じ縁に縦に積む**（ゲームのフルマップも右の縁にまとめている）。
+       別々の隅に置くと、枠が浮いた今は棚とぶつかる。入れ物1つにすれば
+       「同じ隅に2つ置かない」は flex が保証する。 -->
+  <div id="map-readouts">
+    <!-- 縮尺。中身は app.js が入れる。role="img" + aria-label で
+         「縮尺 500 m」と1つの情報として読ませる（バーの図形と数字が
+         別々に読み上げられても意味を成さない）。
+         未検証の印は**この数値のすぐ隣**に出す（ヘッダには常駐させない）。 -->
+    <div id="scale-wrap" hidden>
+      <div id="scalebar" role="img" aria-label="縮尺">
+        <span class="bar"></span><span class="label"></span>
+      </div>
+      <span class="badge" id="unverified" hidden
+            title="このマップの一辺はまだ実測で確かめていません。縮尺と座標は目安です。">未検証</span>
+    </div>
+    <!-- **DOM の順＝見た目の順＝読み上げの順**（CSS の order を使わない）。
+         塗っている最中の「3×2 = 6マス」→ 座標 → セル名 → コピーの案内。
+         **座標が主役。** ゲームはセル名を表示しないので、ゲーム画面と
+         突き合わせられるのは座標のほう。.paint と .copyhint は空のとき消える。 -->
+    <div id="readout" hidden><span class="paint"></span><span class="xy"></span><span class="cell"></span><span class="copyhint"></span></div>
+  </div>
+
+  <!-- 建造物・設置物・車輌のパレット。盤面の上に浮かせる（main の flex の子に
+       するとマップが押し出されて狭くなる）。48項目あるので種別ごとに畳める。 -->
+  <aside id="palette" aria-label="建造物のパレット" hidden></aside>
+  <!-- ゲームが決める円（コントロールエリア）と、チームが塗る 1km マスのパネル。
+       パレットと同じ左の引き出しで、同時には1枚しか開かない。表示の on/off も
+       ここに入れて、フッターのボタンを増やさないと決めている（D-037）。
+
+       **円が先、マス塗りが後。** 試合が始まって最初に要るのは「どの円を想定するか」で、
+       マス塗りは落ち着いて書くもの。名前に「円」を入れてあるのも同じ理由で、
+       フッターを見たときに円がどこにあるか分かるようにするため
+       （オーナー報告: 「円を出すのに導線が長すぎます」）。 -->
+  <aside id="zonepanel" aria-label="円とマス" hidden>
+    <div class="head">
+      <h2>円とマス</h2>
+      <button type="button" class="close quiet" id="zonepanel-close">閉じる</button>
+    </div>
+    <!-- コントロールエリア（ゲームが決めた円）。**引き出しの先頭に置く。**
+         試合が始まって最初に要るのがこれなので、開いてすぐ、スクロールせずに
+         選べる位置にある必要がある。下のマス塗りと**別の見出し**にしてあるのは、
+         塗りが「チームの判断」でこちらが「ゲームが決めたもの」だから。 -->
+    <section class="zp-section" aria-labelledby="zp-head">
+      <h3 id="zp-head">コントロールエリア（ゲームが決める）</h3>
+      <p class="hint">ゲームが試合ごとに、この中から1つ選びます（半径 500m）。<strong>選ぶと、円の外のドリルタワーは盤面から消えます</strong>（その試合では戦わないため）。<br>ここで選ぶのは<strong>この作戦が想定するパターン</strong>で、試合の記録ではありません。<br>この円は手では描けません（ゲームが決めた位置です）。動くホットゾーンは下の欄で置きます。</p>
+      <!-- 1択の欄（`<select>` は使わない。public/js/plan/choice.js の冒頭に理由）。
+           札は app.js の fillZoneSelects() が入れる。 -->
+      <div class="zp-row">
+        <span class="field-label" id="zone-preset-label">想定するパターン</span>
+        <div id="zone-preset-select" class="choice" role="radiogroup"
+             aria-labelledby="zone-preset-label"></div>
+      </div>
+      <p class="zone-counts data" id="zone-preset-info">パターンがまだ登録されていません</p>
+      <button type="button" id="toggle-zone-preset" aria-pressed="true">円を表示</button>
+
+      <!-- 登録は admin だけ。マップ静的で全作戦に効くので、権限は
+           map_towers / map_spawns と同じ扱いにする。app.js が hidden を外す。 -->
+      <details class="zp-admin" id="zone-admin" hidden>
+        <summary>円を登録・修正する（管理者）</summary>
+        <div class="zp-admin-body">
+          <p class="hint">ゲーム画面に出ている座標をそのまま入れてください（1 = 100m）。<br>打つと盤面に破線の円が出ます。位置を目で確かめてから保存してください。</p>
+          <div class="zp-row">
+            <span class="field-label" id="zp-target-label">直す対象</span>
+            <div id="zp-target" class="choice" role="radiogroup"
+                 aria-labelledby="zp-target-label"></div>
+          </div>
+          <div class="zp-form">
+            <div class="zp-field">
+              <label for="zp-key">名前</label>
+              <input id="zp-key" type="text" autocomplete="off" placeholder="Default">
+            </div>
+            <div class="zp-field">
+              <label for="zp-radius">半径 (m)</label>
+              <input id="zp-radius" type="number" step="10" inputmode="decimal" autocomplete="off">
+            </div>
+            <div class="zp-field">
+              <label for="zp-x">中心 x</label>
+              <input id="zp-x" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="75.07">
+            </div>
+            <div class="zp-field">
+              <label for="zp-y">中心 y</label>
+              <input id="zp-y" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="98.71">
+            </div>
+            <div class="zp-field">
+              <label for="zp-weight">重み</label>
+              <input id="zp-weight" type="number" step="1" inputmode="decimal" autocomplete="off" placeholder="不明なら空">
+            </div>
+            <div class="zp-field zp-wide">
+              <label for="zp-tag">ゲーム内のタグ名</label>
+              <input id="zp-tag" type="text" autocomplete="off" placeholder="ZoneAlternator.Bakurani.Default.Circle">
+            </div>
+          </div>
+          <div class="zp-actions">
+            <button type="button" id="zp-save">保存</button>
+            <button type="button" id="zp-delete" class="quiet" hidden>この円を消す</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ホットゾーン（半径 85m）。**作戦の核心**（D-052。中に入ると人数が2倍に
+         数えられる）。コントロールエリアの一画の**すぐ下**に置くのは、どちらも
+         「円」で、円を探す人がこの引き出しを開けるから（D-049 で引き出しを
+         「円とマス」に改名したのと同じ理由）。マス塗りより先に出す。
+         上の円と別の一画にしてあるのは、**誰が決めたものかが違う**から。
+         上はゲームが決めた位置そのもの、こちらはゲームが出すものについての
+         チームの想定（時間で動き、ドリルリグで引き寄せられる）。
+         置いたものの実体は配置（placements）なので、動かす・消すは
+         他の配置とまったく同じ作法で、選べばいつもの詳細パネルが出る。 -->
+    <section class="zp-section" aria-labelledby="hz-head">
+      <h3 id="hz-head">ホットゾーン（チームの想定）</h3>
+      <p class="hint"><strong>中に入ると人数が2倍に数えられます。</strong>半径 85m（未検証）。<br>時間で動き、ドリルリグで引き寄せられるので、<strong>来そうな所</strong>や<strong>引き寄せたい所</strong>を置いて比べてください。いくつでも置けます。<br>置いたものは掴んで動かせます。</p>
+      <!-- 置けるのはカタログ（catalog_items の mk_hotzone）が届いてから。
+           最初は押せない状態で出し、届いたら app.js が外す。押しても何も
+           起きないボタンを置かないため。 -->
+      <button type="button" id="place-hotzone" aria-pressed="false" disabled
+              title="読み込み中です">ホットゾーンを置く</button>
+    </section>
+
+    <!-- **「誰が決めたものか」を見出しで切る。** 上の円はゲームが決める事実で、
+         ここから下のマス塗りはチームが手で書く見立て。 -->
+    <h3 id="zk-head">チームの見立て（1km マス）</h3>
+    <p class="hint">種類を選んでドラッグすると 1km のマス目で塗れます。押しただけなら1マスの付け外し。<br>マップを動かすのは「移動」かスペースキー、指なら2本指です。</p>
+    <div class="zone-kinds" id="zone-kinds" role="group" aria-labelledby="zk-head">
+      <button type="button" data-kind="own" aria-pressed="false">自陣</button>
+      <button type="button" data-kind="enemy" aria-pressed="false">敵陣</button>
+      <button type="button" data-kind="neutral" aria-pressed="false">中立</button>
+      <button type="button" data-kind="key" aria-pressed="false">最重要</button>
+      <button type="button" data-kind="risk" aria-pressed="false">危険予測</button>
+    </div>
+    <button type="button" id="toggle-areas" aria-pressed="true">エリアを表示</button>
+    <p class="zone-counts data" id="zone-counts">まだ塗っていません</p>
+
+  </aside>
+  <!-- 選んだものの詳細（検視台）。配置ならコスト・射程・出典・検証状態と削除、
+       地名なら呼び名の書き換えと削除。盤面で選べるものは1度に1つなので、
+       種類ごとにパネルを増やさず1枚を使い回す。 -->
+  <aside id="placement-detail" aria-label="選んだものの詳細" hidden></aside>
+</main>
+
+<footer id="tools">
+  <!-- **通知の出口は1つだけ**で、「いま選んでいる道具」の説明もここに出る。
+       棚のすぐ上に置くのは、押した手元のそばで読ませるため。空なら板ごと消える。 -->
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <!-- 棚。**常に見えているのは5かたまり**（道具 / 取り消す / 建造物・円とマス /
+       ズーム / 表示）。たまにしか触らないものは「表示」の中に畳んだ。
+       ラベルは見える文字を短くし、読み上げ用の名前は aria-label に全文で持つ
+       （「射程」と出して「射程を表示」と読ませる）。 -->
+  <div id="rail">
+    <div class="cluster">
+      <span class="cluster-label" id="cluster-tool-label">道具</span>
+      <div class="cluster-row">
+        <!-- ポインタが何をするかの排他の1組。**4つとも「押すと盤面で何が起きるか」**
+             なので同じ組に入れる（地名を置くだけ別のまとまりにあると、
+             いま何の道具かが2箇所に分かれて読めない）。
+             **既定は「移動」**。地図を見るつもりのドラッグが線になってはいけない。
+             押されているものを先頭にして、既定がどれか一目で分かるようにする。 -->
+        <div class="segmented" id="tool-modes" role="group" aria-labelledby="cluster-tool-label">
+          <button id="tool-pan" type="button" aria-pressed="true">移動</button>
+          <button id="tool-pen" type="button" aria-pressed="false">ペン</button>
+          <button id="tool-eraser" type="button" aria-pressed="false" aria-label="消しゴム" title="消しゴム">消す</button>
+          <button id="tool-callout" type="button" aria-pressed="false" aria-label="地名を置く" title="地名を置く">地名</button>
+        </div>
+        <!-- 太さはペンの設定。**ペン（と消しゴム）を選んでいるときだけ出す。**
+             使わない道具の設定を常に置いておくと、棚がそのぶん長くなる。 -->
+        <span class="widths" id="widths" role="group" aria-label="ペンの太さ" hidden>
+          <button type="button" data-w="1" aria-pressed="false" aria-label="細い"><span class="bar"></span></button>
+          <button type="button" data-w="2" aria-pressed="true" aria-label="ふつう"><span class="bar"></span></button>
+          <button type="button" data-w="3" aria-pressed="false" aria-label="太い"><span class="bar"></span></button>
+        </span>
+        <button id="undo" type="button" aria-label="取り消す" title="取り消す">戻す</button>
+      </div>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-label">置く</span>
+      <div class="cluster-row">
+        <button id="toggle-palette" type="button" aria-pressed="false" aria-expanded="false" aria-controls="palette">建造物</button>
+        <button id="toggle-zones" type="button" aria-pressed="false" aria-expanded="false" aria-controls="zonepanel">円とマス</button>
+      </div>
+    </div>
+
+    <div class="cluster">
+      <span class="cluster-label">見る</span>
+      <div class="cluster-row">
+        <span class="group" id="zoom" role="group" aria-label="ズーム">
+          <button id="zoom-out" type="button" aria-label="縮小">−</button>
+          <button id="zoom-in" type="button" aria-label="拡大">＋</button>
+          <button id="zoom-fit" type="button" aria-label="全体表示" title="全体表示">全体</button>
+        </span>
+        <!-- 見え方の設定はこのメニュー1枚に集める。**棚に出すボタンは増やさない。**
+             中身は3つの見出しに分かれる（背景 / 重ねるもの / 地図にあるもの）。
+             畳んでいる間も、いちばんよく変える背景の設定だけは値を外に出す。 -->
+        <details class="menu" id="view-menu">
+          <summary><span class="menu-label">表示</span><span class="menu-value" id="basemap-current">モノクロ</span></summary>
+          <div class="menu-body">
+            <p class="menu-head">背景の見せ方</p>
+            <span class="group" id="basemap-modes">
+              <button type="button" data-basemap="color" aria-pressed="false">カラー</button>
+              <button type="button" data-basemap="mono" aria-pressed="true">モノクロ</button>
+              <button type="button" data-basemap="posterize" aria-pressed="false">高コントラスト</button>
+            </span>
+            <!-- チームが置いた物のうち、出す・伏せるを選べるもの。 -->
+            <p class="menu-head">重ねるもの</p>
+            <span class="group" id="overlay-toggles">
+              <button type="button" id="toggle-ranges" aria-pressed="true">射程を表示</button>
+              <button type="button" id="toggle-callouts" aria-pressed="true">地名を表示</button>
+            </span>
+            <!-- 地図が持っている物。チームが置いた物（建造物・地名・エリア）の
+                 表示切り替えとは別の見出しにする。 -->
+            <p class="menu-head">地図にあるもの</p>
+            <span class="group" id="map-features">
+              <button type="button" id="toggle-towers" aria-pressed="true">ドリルタワー</button>
+              <button type="button" id="toggle-spawns" aria-pressed="true">陣営スポーン</button>
+            </span>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="/js/plan/app.js"></script>
+</body>
+</html>

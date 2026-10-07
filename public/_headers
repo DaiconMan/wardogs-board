@@ -1,0 +1,29 @@
+# ルールは上から順に、最初に当たったものだけが効く。
+# あとから広いルール（例: /*）を足すときは、必ずこのファイルの一番下に置くこと。
+
+# JS は毎回サーバに確認させる。
+# Pages の既定は max-age=14400 + must-revalidate（4時間）で、HTML の既定は
+# max-age=0 + must-revalidate。放っておくと「新しい HTML ＋ 4時間古い JS」が
+# 成立し、HTML にあるボタンのハンドラが JS 側に無い＝押しても動かない、という
+# 状態が最大4時間続く（本番で実際に起きた）。
+# max-age=0 でも ETag による条件付きリクエストは効くので、中身が変わっていなければ
+# 304 が返るだけで転送量はほとんど増えない。
+# ファイル名にハッシュを付ける方式は、ビルド工程を足さない方針のため採らない。
+/js/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# CSS も JS とまったく同じ理由で毎回確認させる。
+# plan.html の <style> を public/css/ へ出したので、放っておくと今度は
+# 「新しい HTML ＋ 4時間古い CSS」が成立する（class 名を変えたのに古い CSS が
+# 残る＝レイアウトが崩れたまま最大4時間）。JS で踏んだ事故を CSS で繰り返さない。
+/css/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# マップ画像は内容が変わらない静的アセット。既定の max-age=14400 + must-revalidate
+# だと 4時間ごとに全タイルを再検証しに行くので、1年 immutable にする。
+# 画像を差し替えるときはファイル名かパスを変える運用にする（上書きしない）。
+/map/tiles/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/map/overview/*
+  Cache-Control: public, max-age=31536000, immutable

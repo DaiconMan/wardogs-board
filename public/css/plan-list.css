@@ -1,0 +1,176 @@
+/* /plan のスタイル: ログイン前と、作戦の一覧（枠の表）
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── ログイン前 ─────────────────────────────────────────── */
+main.gate{ align-items:center; justify-content:center; padding:var(--s5); }
+main.gate button.primary{ font-size:var(--t-lead); padding:0 22px; }
+/* ログイン無しで見る人の画面（ログインのボタン ＋ 公開されている作戦）。
+   1つのボタンを中央に置く体裁では一覧が入らないので、**作戦の一覧と同じ
+   読み物の体裁**に戻す（`main.create` と同じ指定。別の型を増やさない）。 */
+main.gate.gate-guest{ display:block; overflow:auto; padding:0; }
+main.gate.gate-guest button.primary{ align-self:flex-start; }
+
+/* ── 作戦の一覧（?id= が無いとき）────────────────────────────
+   **枠の表が主役。** 作戦は 9〜12 個作ったら終わりで、あとは試合のたびに
+   開くもの（D-046 の目的3）。だから常設の作成フォームは置かない。
+   空いている枠そのものが作る入口で、押すとその枠の中に題名の欄が開く。
+
+   オーナー指摘（2026-10-01、作戦1件の実画面を見て）: 「これでいいとおもってます？」
+   それまでは左に大きく作成フォーム、右に小さく一覧で、主従が逆だった。
+   しかも**作っていない枠が画面に存在しなかった**ので、9つのうち何が
+   埋まっていて何が空いているかが読めなかった。 */
+main.create{ display:block; overflow:auto; }
+.sheet{
+  width:min(1040px, 100%); margin:0 auto;
+  padding:var(--s5) var(--s4) var(--s6);
+  display:flex; flex-direction:column; gap:var(--s5);
+}
+.sheet h2{
+  font-size:var(--t-head); line-height:1.4; font-weight:700;
+}
+/* 「9枠のうち N枠に作戦があります」。枠の絵でも分かるが、**数でも1行**出す。 */
+.grid-progress:empty{ display:none; }
+
+.list-sec{ display:flex; flex-direction:column; gap:var(--s3); min-width:0; }
+.list-sec p{ margin:0; font-size:var(--t-body); color:var(--muted); }
+.list-sec p.err{ color:var(--danger); font-weight:700; }
+/* 自分の作戦はマップごとの区画に分ける（D-046。作戦は「マップ × パターン」の
+   単位で、総数は 9〜12 件で頭打ちになる）。絞り込みの欄を足すより、
+   同じ作戦がいつも同じ場所にいるほうが試合中は速い。 */
+.s-groups{ display:flex; flex-direction:column; gap:var(--s4); min-width:0; }
+.s-group{ display:flex; flex-direction:column; gap:var(--s2); min-width:0; }
+
+/* ── 枠の表（マップ × 想定するパターン）─────────────────────── */
+.s-grid{ display:flex; flex-direction:column; gap:var(--s5); min-width:0; }
+/* 枠は幅に合わせて折り返す。**390px では1列**、広い画面では3〜4列。
+   パターンの名前は長い（`Lumberyard（タワー1・4・5）`）ので、
+   1枠の最小幅は 1行で名前が読める 232px にしてある。 */
+.s-cells{
+  display:grid; gap:var(--s2); min-width:0;
+  grid-template-columns:repeat(auto-fill, minmax(232px, 1fr));
+}
+/* 枠（`.s-cell`）と、枠に入らない作戦の区画（`.s-extra`）は同じ面にする。
+   **クラスは分ける**（`.s-cell` の数がそのまま「枠の数」なので、
+   未設定の区画を同じクラスにすると数が狂う）。 */
+.s-cell, .s-extra{
+  display:flex; flex-direction:column; gap:var(--s2); min-width:0;
+  padding:var(--s3);
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+}
+/* 未設定の区画は枠の表の下に1枚。枠と並べない（枠ではないため）。 */
+.s-extra{ margin-top:var(--s2); }
+/* **空の枠は破線で、面を敷かない。**
+   「まだ決まっていない＝破線」は行のパターン札（.pattern.none）と同じ約束。
+   色を足さずに、埋まっている枠との差を**形**で出す（モノクロでも読める）。
+   これが「9つのうちどれが準備できているか」を一目にするための主な手掛かり。 */
+.s-cell[data-state="empty"]{ background:none; border-style:dashed; }
+/* 枠の見出し＝パターンの名前。**探すときの手掛かりなので本文より強く出す。** */
+.s-cell > .pattern, .s-extra > .pattern{
+  margin:0; min-width:0;
+  font-family:var(--font-display); letter-spacing:.04em;
+  font-size:var(--t-lead); line-height:1.4; font-weight:700; color:var(--ink);
+}
+.s-extra > .pattern.none{ font-family:var(--font-ui); letter-spacing:0; color:var(--muted); }
+.s-cell > p, .s-extra > p{ margin:0; font-size:var(--t-small); line-height:1.5; color:var(--muted); }
+/* 枠の中では行が「カードの中のカード」になるので、枠線を外して詰める
+   （同じ枠が二重に見えるのを避ける）。 */
+/* 枠の中の行は「カードの中のカード」になるので、枠線を外して詰める
+   （同じ枠が二重に見えるのを避ける）。
+   **読むものと操作を縦に積む。** 枠は狭い（232px〜）ので、横一列に並べると
+   「開く」や「共有URLをコピー」の文字が途中で折れて読めなくなる（実測）。 */
+.s-cell .s-list li, .s-extra .s-list li{
+  flex-direction:column; align-items:stretch; gap:var(--s1);
+  background:none; border:0; padding:var(--s1) 0;
+}
+.s-cell .s-list li:hover, .s-extra .s-list li:hover{ border-color:transparent; }
+.s-cell .s-main, .s-extra .s-main{ flex:none; }
+.s-cell .s-actions, .s-extra .s-actions{ margin-left:0; flex-wrap:wrap; }
+/* 折り返すのは**ボタンとボタンの間**だけ。語の途中では折らない。 */
+.s-cell .s-actions > *, .s-extra .s-actions > *{ white-space:nowrap; }
+/* 「この枠に作る」。空の枠では主役、埋まっている枠では添え物。 */
+.s-cell .s-new{ align-self:flex-start; }
+.s-cell[data-state="ready"] .s-new{ font-size:var(--t-small); color:var(--muted); }
+/* 枠の中に開く作成フォーム。選ぶ欄は無い（マップもパターンも枠が決める）。 */
+#create.s-form{ display:flex; flex-direction:column; gap:var(--s1); min-width:0; }
+#create.s-form label{
+  font-size:var(--t-small); font-weight:700; letter-spacing:.02em; color:var(--muted);
+}
+#create.s-form input[type="text"]{
+  min-height:44px; padding:0 var(--s3); min-width:0;
+  background:var(--panel); color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--radius);
+  font:inherit; font-size:var(--t-body);
+}
+#create.s-form input:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+.s-form-actions{ display:flex; flex-wrap:wrap; gap:var(--s2); margin-top:var(--s1); }
+/* 区画の見出し。マップ名は探すときの最初の手掛かりなので本文の濃さで出し、
+   件数は添え字に落とす（数えるためではなく、区画の厚みを掴むためのもの）。 */
+.s-group > h3{
+  display:flex; align-items:baseline; gap:var(--s2); min-width:0;
+  font-size:var(--t-body); line-height:1.4; font-weight:700;
+}
+.s-group-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.s-group-count{ font-size:var(--t-micro); color:var(--muted); font-weight:400; }
+
+.s-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s2); }
+.s-list li{
+  display:flex; align-items:center; gap:var(--s2) var(--s3); flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:var(--s2) var(--s2) var(--s2) var(--s4);
+  transition:border-color .12s ease;
+}
+.s-list li:hover{ border-color:var(--muted); }
+.s-main{
+  display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--s1) var(--s2);
+  flex:1 1 220px; min-width:0;
+}
+.s-list .s-title{
+  font-weight:700; font-size:var(--t-lead); min-width:0; max-width:100%;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.s-list .updated{ font-size:var(--t-small); color:var(--muted); white-space:nowrap; }
+/* どのパターン向けか。**これが探すときの手掛かり**なので、マップ名の
+   バッジ（`.badge`、添え字の明るさ）より一段濃くする。新しい色は足さず、
+   文字の濃さと薄い面だけで持ち上げる。 */
+.s-list .pattern{
+  font-family:var(--font-display); letter-spacing:.06em;
+  font-size:var(--t-micro); line-height:1.6; padding:1px 6px;
+  border:1px solid var(--line); border-radius:var(--radius-sm);
+  background:color-mix(in srgb, var(--ink) 6%, transparent);
+  color:var(--ink); font-weight:700; white-space:nowrap;
+}
+/* 未設定は隠さない（既存の作戦は全部これ）。「決まっていない」ことが
+   形で分かるように、枠を破線にして添え字の明るさに落とす。 */
+.s-list .pattern.none{
+  border-style:dashed; background:none; color:var(--muted); font-weight:400;
+}
+/* 誰が作ったか。訪問履歴の行にだけ出る、自分の作戦との決定的な違いなので、
+   「作成」は添え字の明るさに落とし、名前だけ本文と同じ濃さで読ませる。 */
+.s-list .by{
+  font-size:var(--t-small); color:var(--muted);
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.s-list .by strong{ color:var(--ink); font-weight:700; }
+/* 作成者の Discord のアイコン。**持っている人にだけ出る。**
+   `white-space:nowrap` の行に混ぜるので、画像も行の高さに揃えて並べる。
+   読めなかったら `<img>` ごと消えて（avatar.js の `fillAvatar`）、
+   この枠は幅ゼロになる——**空の丸も壊れた画像も残さない。**
+   色の輪を回さないのは、一覧には部屋が無く、人の色が決まらないため
+   （色は部屋の中で割り当てる。workers/room/src/presence.js の `pickColor`）。 */
+.s-list .by-face{ display:inline-flex; vertical-align:middle; }
+.s-list .by-face .avatar-img{
+  width:16px; height:16px; border-radius:50%; object-fit:cover;
+  display:block; margin-right:4px; background:var(--panel);
+}
+/* 1行の中で目立たせるのは「開く」だけ。共有と削除は添え物にする。 */
+.s-actions{ display:flex; align-items:center; gap:var(--s1); margin-left:auto; }
+.s-list li a.open{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-height:44px; min-width:44px; padding:0 var(--s4);
+  background:var(--panel); color:var(--ink); text-decoration:none; font-weight:700;
+  border:1px solid var(--line); border-radius:var(--radius); font-size:var(--t-body);
+  transition:border-color .12s ease;
+}
+.s-list li a.open:hover{ border-color:var(--muted); }
+.s-list li a.open:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+

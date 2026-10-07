@@ -1,0 +1,19 @@
+{
+  "name": "wardogs-board",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "test": "vitest run",
+    "test:ui": "playwright test",
+    "deploy:room": "wrangler deploy --config workers/room/wrangler.toml",
+    "deploy": "npm run deploy:room && wrangler pages deploy public --project-name wardogs-board",
+    "shots": "playwright test --config playwright.shots.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "vitest": "^5.0.2",
+    "wrangler": "^4.142.0"
+  }
+}

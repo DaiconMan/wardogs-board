@@ -1,0 +1,311 @@
+/* /plan のスタイル: 浮いている2枚のパネル（パレット／円とマス／詳細）
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── 浮いている2枚のパネル ─────────────────────────────────
+   どちらも盤面の上に浮かせる。main の flex の子にするとマップが押し出されて
+   狭くなり、「マップが主役」という関係が崩れる。
+   役割が違うので見た目も分ける。
+     パレット（左） … 引き出し。ここから選んで盤面に足す。見出しの帯を持つ。
+     詳細（右）     … 検視台。いま選んでいる1件について語る。左端が青い。 */
+#palette, #zonepanel, #placement-detail{
+  position:absolute; z-index:2;
+  display:flex; flex-direction:column;
+  border:1px solid var(--line); border-radius:var(--radius);
+  overflow:auto; overscroll-behavior:contain;
+  box-shadow:var(--shadow-2);
+}
+/* **枠の実寸ぶんだけ内側に寄る。** 値は app.js の measureChrome() が入れる
+   （2箇所に数値を書かない。ガターの --gut-h / --gut-w と同じ作法）。
+   盤面が全面になったので、浮かせた板は枠と重なりうる。重なったら畳む、が
+   今回の方針だが、**開いている間は枠と喧嘩させない。** */
+body[data-page="board"] #palette,
+body[data-page="board"] #zonepanel{
+  top:calc(var(--chrome-top, 56px) + var(--s2));
+  bottom:calc(var(--chrome-bottom, 64px) + var(--s2));
+}
+body[data-page="board"] #placement-detail{
+  top:calc(var(--chrome-top, 56px) + var(--s2));
+  max-height:calc(100% - var(--chrome-top, 56px) - var(--chrome-bottom, 64px) - var(--s4));
+  /* 盤面で選択中のマーカーのハローと同じ青。どれについての話かを色で結ぶ。
+     HUD の一括指定（border:1px）に負けるので、ここで引き直す。 */
+  border-left:3px solid var(--blue-bright);
+}
+
+/* パレット ─────────────────────────────── */
+#palette, #zonepanel{
+  left:var(--s3); top:var(--s3); bottom:var(--s3);
+  width:min(292px, calc(100% - var(--s5)));
+  background:var(--panel);
+  padding:0; gap:0;
+}
+/* 引き出しの見出しは帯（枠と同じ --paper）。スクロールしても残す。 */
+#palette > .head, #zonepanel > .head{
+  position:sticky; top:0; z-index:1;
+  display:flex; align-items:center; gap:var(--s2);
+  padding:var(--s2) var(--s2) var(--s2) var(--s3);
+  background:var(--paper); border-bottom:1px solid var(--line);
+}
+/* **盤面では帯を不透明にする。** `sticky` なので下の中身がこの帯の裏を通る。
+   盤面の `--paper` は `rgba(0,0,0,.26)` なので、そのままだと引き出しを
+   スクロールしたときに下の文章が見出しに透けて重なり、どちらも読めなくなる
+   （`npm run shots` の 26-zone-panel で実際にそう見えた）。 */
+body[data-page="board"] #palette > .head,
+body[data-page="board"] #zonepanel > .head{ background:var(--hud-band); }
+#palette > .head h2, #zonepanel > .head h2{
+  margin-right:auto; min-width:0; font-size:var(--t-body); line-height:1.5;
+}
+#palette > .note{ margin:var(--s3) var(--s3) 0; }
+#palette > .pal-group{ margin:var(--s3) var(--s3) 0; }
+#palette > .pal-group:last-child{ margin-bottom:var(--s3); }
+
+/* 縦の flex の子は既定で縮む（flex-shrink:1）。しかも .pal-group は角丸のために
+   overflow:hidden を持つので、「内容より小さくならない」という自動の下限（min-height:auto）
+   が効かず 0 まで潰れる。結果、56件を全部開いても overflow:auto にはみ出しが渡らず、
+   各グループの中身が切り落とされて下のほうの項目に永久に届かなくなる（実測: 374px の
+   一覧が 43px に潰れ、scrollHeight == clientHeight のままだった）。
+   子を縮ませないことで、はみ出しをパネルのスクロールに渡す。 */
+#palette > *{ flex:none; }
+
+/* エリアのパネル ────────────────────────────
+   パレットと同じ「左の引き出し」。同時に2枚開くと下のほうが読めないので、
+   app.js が片方を開くときもう片方を畳む。中身は少ないので縦には伸ばさない。 */
+#zonepanel{
+  bottom:auto; max-height:calc(100% - var(--s5));
+}
+#zonepanel > *{ flex:none; }
+#zonepanel .hint{
+  margin:0; padding:var(--s3) var(--s3) 0;
+  font-size:var(--t-small); line-height:1.55; color:var(--muted);
+}
+#zone-kinds{
+  display:flex; flex-wrap:wrap; gap:var(--s1);
+  padding:var(--s3) var(--s3) 0;
+}
+#zone-kinds button{ flex:none; padding:0 var(--s3); }
+/* 地図に出る色をチップの上にも出す。名前と色の対応を覚え直さずに済む。 */
+#zone-kinds button::before{
+  content:""; width:12px; height:12px; border-radius:3px; flex:none;
+  background:var(--chip);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent) inset;
+}
+#zone-kinds button[data-kind="own"]{ --chip:var(--area-own); }
+#zone-kinds button[data-kind="enemy"]{ --chip:var(--area-enemy); }
+#zone-kinds button[data-kind="neutral"]{ --chip:var(--area-neutral); }
+#zone-kinds button[data-kind="key"]{ --chip:var(--area-key); }
+#zone-kinds button[data-kind="risk"]{ --chip:var(--area-risk); }
+/* 表示の on/off はパネルの中に置く（フッターのボタンを増やさない）。 */
+#toggle-areas{ align-self:flex-start; margin:var(--s3) var(--s3) 0; }
+/* 引き出しの下に出る集計・要約の1行。**クラスで書く**（円の側とマス塗りの側で
+   2つあり、id で書くと片方だけ本文と同じ濃さで残る。実際に残っていた）。 */
+.zone-counts{
+  margin:0; padding:var(--s3);
+  font-size:var(--t-small); line-height:1.5; color:var(--muted);
+}
+
+/* コントロールエリア（ゲームが決めた円）の一画。引き出しの先頭に置く。 */
+.zp-section{ padding-bottom:var(--s3); }
+/* 引き出しの中の小見出し。「チームの見立て」と「ゲームが決める」を同じ字面で
+   立てて、**どちらが誰の決めたものか**を一目で切る。 */
+#zonepanel > h3, .zp-section > h3{
+  margin:0; padding:var(--s3) var(--s3) 0;
+  font-size:var(--t-body); line-height:1.5;
+}
+/* 罫線は一画の境目に1本ずつ。円の一画が先頭に来たので、罫線は**後ろ側**に
+   付ける（先頭に付けると head の下線と二重になる）。
+   引き出しの中は3つの一画（コントロールエリア / ホットゾーン / マス塗り）。 */
+#zk-head,
+.zp-section + .zp-section > h3{ border-top:1px solid var(--line); padding-top:var(--s3); }
+/* 見出しの下に札を並べる。**横並びにしない。**
+   1択の欄は選択肢を畳まずに出すので（`<select>` をやめた。§1 の .choice）、
+   292px の引き出しの中では見出しと札を横に並べる幅が無い。 */
+.zp-row{
+  display:flex; flex-direction:column; align-items:stretch; gap:var(--s2);
+  padding:var(--s3) var(--s3) 0;
+}
+.zp-row > .field-label{
+  font-size:var(--t-small); font-weight:700; color:var(--muted);
+}
+#zone-preset-info{ padding-top:var(--s2); }
+#toggle-zone-preset{ align-self:flex-start; margin:0 var(--s3); }
+/* ホットゾーンを置くボタン。上の「円を表示」と同じ位置・同じ形にして、
+   「円の一画のボタンはここ」を覚え直させない。押されている状態の見え方は
+   他の切り替えと同じ（button[aria-pressed="true"] の青）。色を足さない。 */
+#place-hotzone{ align-self:flex-start; margin:0 var(--s3); }
+/* 盤面に出る色と形をボタンの上にも出す（マス塗りのチップと同じ手）。
+   **あちらは角丸の四角、こちらは丸**。マスと円の違いがチップの形に出る。 */
+#place-hotzone::before{
+  content:""; width:12px; height:12px; border-radius:50%; flex:none;
+  background:var(--hot);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent) inset;
+}
+
+.zp-admin{ margin:var(--s3) var(--s3) 0; border:1px solid var(--line); border-radius:var(--radius); }
+.zp-admin > summary{
+  display:flex; align-items:center; min-height:44px; padding:0 var(--s3);
+  font-size:var(--t-small); color:var(--muted); cursor:pointer; list-style:none;
+}
+.zp-admin > summary::-webkit-details-marker{ display:none; }
+.zp-admin > summary::before{ content:"▸"; margin-right:var(--s2); color:var(--muted); }
+.zp-admin[open] > summary::before{ content:"▾"; }
+.zp-admin[open] > summary{ border-bottom:1px solid var(--line); background:var(--paper); }
+.zp-admin > summary:focus-visible{ outline:2px solid var(--blue); outline-offset:-2px; }
+.zp-admin-body{ padding-bottom:var(--s3); }
+.zp-admin-body .hint{ padding-top:var(--s3); }
+/* 数値の欄は2列。x と y が横に並ぶと、ゲーム画面の「x.. y..」と同じ形で読める。 */
+.zp-form{
+  display:grid; grid-template-columns:1fr 1fr; gap:var(--s2);
+  padding:var(--s3) var(--s3) 0;
+}
+.zp-field{ display:flex; flex-direction:column; gap:var(--s1); min-width:0; }
+.zp-field.zp-wide{ grid-column:1 / -1; }
+.zp-field > label{
+  font-size:var(--t-small); font-weight:700; letter-spacing:.02em; color:var(--muted);
+}
+.zp-field > input{
+  min-height:44px; padding:0 var(--s2); min-width:0;
+  background:var(--panel); color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--radius);
+  font:inherit; font-size:var(--t-body);
+}
+/* 座標・半径・重みは数値。この画面の他の数値と同じ字面に揃える。 */
+#zp-x, #zp-y, #zp-radius, #zp-weight{
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+}
+/* **増減の矢印（スピナー）を消す。** あれはブラウザが描く部分で、こちらの
+   CSS が届かない（`<select>` のポップアップで踏んだのと同じ性質）。
+   ここに入れる値はゲーム画面に出ている数字の写しなので、1ずつ増減させる
+   用が無い。キーボードの ↑ ↓ は `type=number` のまま残る。 */
+#zp-x, #zp-y, #zp-radius, #zp-weight{ appearance:textfield; -moz-appearance:textfield; }
+#zp-x::-webkit-outer-spin-button, #zp-y::-webkit-outer-spin-button,
+#zp-radius::-webkit-outer-spin-button, #zp-weight::-webkit-outer-spin-button,
+#zp-x::-webkit-inner-spin-button, #zp-y::-webkit-inner-spin-button,
+#zp-radius::-webkit-inner-spin-button, #zp-weight::-webkit-inner-spin-button{
+  appearance:none; -webkit-appearance:none; margin:0;
+}
+.zp-field > input:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+.zp-actions{
+  display:flex; flex-wrap:wrap; gap:var(--s2);
+  padding:var(--s3) var(--s3) 0;
+}
+
+/* 未検証の数値を確定値のように見せないための注意書き。
+   本文と同じ見た目だと読み飛ばされるので、注意色の縦線を立てる。 */
+.note{
+  margin:0; padding:var(--s2) var(--s3);
+  border-left:3px solid var(--hot);
+  background:color-mix(in srgb, var(--hot) 10%, transparent);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:var(--t-small); line-height:1.55; color:var(--ink);
+}
+
+.close{ flex:none; min-width:44px; padding:0 var(--s3); font-size:var(--t-small); }
+
+.pal-group{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+.pal-group > summary{
+  display:flex; align-items:center; gap:var(--s2);
+  min-height:44px; padding:0 var(--s3);
+  font-weight:700; font-size:var(--t-body); cursor:pointer; list-style:none;
+}
+.pal-group > summary::-webkit-details-marker{ display:none; }
+/* 開閉の状態を三角で示す（色だけに頼らない）。 */
+.pal-group > summary::before{ content:"▸"; color:var(--muted); }
+.pal-group[open] > summary{ border-bottom:1px solid var(--line); background:var(--paper); }
+.pal-group[open] > summary::before{ content:"▾"; }
+.pal-group > summary:focus-visible{ outline:2px solid var(--blue); outline-offset:-2px; }
+.pal-group .count{
+  margin-left:auto; font-size:var(--t-micro); font-weight:400; color:var(--muted);
+  font-family:var(--font-data);
+}
+.pal-list{ display:flex; flex-direction:column; gap:2px; padding:var(--s1); }
+
+/* 1項目 = 1ボタン。名前・コスト・射程を2行で出す。 */
+.pal-item{
+  width:100%; min-height:44px;
+  flex-direction:column; align-items:flex-start; justify-content:center; gap:2px;
+  padding:6px var(--s3); text-align:left;
+  border-color:transparent; background:transparent;
+  font-size:var(--t-body); line-height:1.4;
+}
+.pal-item:hover:not(:disabled){ background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.pal-item .nm{ font-weight:700; }
+.pal-item .meta{
+  display:flex; flex-wrap:wrap; align-items:center; gap:2px var(--s2);
+  font-size:var(--t-micro); font-weight:400; color:var(--muted);
+}
+.pal-item .cost, .pal-item .rg{
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+}
+/* 未検証のバッジ。ヘッダの #unverified と同じ見た目に揃える。 */
+.unv{
+  font-size:var(--t-micro); font-weight:700; line-height:1.6;
+  padding:0 6px; border-radius:999px;
+  color:var(--ink); border:1px solid var(--hot);
+  background:color-mix(in srgb, var(--hot) 20%, transparent);
+  white-space:nowrap;
+}
+
+/* 選んだ配置の詳細 ────────────────────────── */
+/* 座標表示（右下）とぶつからないよう、詳細は右上に出す。 */
+#placement-detail{
+  right:var(--s3); top:var(--s3);
+  width:min(300px, calc(100% - var(--s5)));
+  max-height:calc(100% - 96px);
+  background:var(--panel);
+  /* 盤面で選択中のマーカーのハローと同じ青。どれについての話かを色で結ぶ。 */
+  border-left:3px solid var(--blue);
+  padding:var(--s3); gap:var(--s3);
+  /* 座標や出典は Discord に貼るために写したいことがあるので、
+     body で止めた選択をここだけ戻す（盤面のドラッグとは重ならない場所）。 */
+  user-select:text; -webkit-user-select:text;
+}
+/* パレットと同じ理由で子を縮ませない。こちらは内容が増えるほど縦に伸びるので、
+   はみ出しは切り落とさずパネルのスクロールに渡す。 */
+#placement-detail > *{ flex:none; }
+#placement-detail .head{ display:flex; align-items:flex-start; gap:var(--s2); }
+#placement-detail .head h2{
+  margin-right:auto; min-width:0;
+  font-size:var(--t-lead); line-height:1.4;
+}
+#placement-detail dl{
+  margin:0; display:grid; grid-template-columns:auto 1fr; gap:var(--s1) var(--s3);
+  font-size:var(--t-body); line-height:1.5;
+}
+#placement-detail dt{ color:var(--muted); white-space:nowrap; }
+#placement-detail dd{ margin:0; min-width:0; overflow-wrap:anywhere; }
+#placement-detail .src{ margin:0; font-size:var(--t-micro); line-height:1.55; color:var(--muted); }
+#placement-detail details summary{
+  min-height:44px; display:flex; align-items:center;
+  font-size:var(--t-small); color:var(--muted); cursor:pointer;
+}
+#placement-detail details summary:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+#placement-detail #placement-delete{ align-self:flex-start; }
+
+/* この配置について書く欄（注記と優先度）。
+   上の <dl> は「カタログが言っていること」で、こちらは「自分たちが決めたこと」。
+   読む所と書く所を混ぜないよう、罫線で切ってひとまとまりにする。
+   欄の見た目は作成フォーム（#create）と同じ作法に揃える（新しい型を作らない）。 */
+#placement-detail .edit{
+  display:flex; flex-direction:column; gap:var(--s3);
+  padding-top:var(--s3); border-top:1px solid var(--line);
+}
+#placement-detail .field{ display:flex; flex-direction:column; gap:var(--s1); }
+#placement-detail .field > label, #placement-detail .field > .field-label{
+  font-size:var(--t-small); font-weight:700; letter-spacing:.02em; color:var(--muted);
+}
+#placement-detail .field .row{ display:flex; align-items:center; gap:var(--s2); }
+#placement-detail input[type="text"]{
+  min-height:44px; padding:0 var(--s3); min-width:0; flex:1 1 auto;
+  background:var(--panel); color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--radius);
+  font:inherit; font-size:var(--t-body);
+}
+/* 優先度は数字なので等幅で組む（この画面の他の数値と同じ字面に揃える）。
+   札は10枚（なし / 1〜9）あるので、数字のほうは正方形に詰めて2段で収める。 */
+#placement-rank{ font-family:var(--font-data); font-variant-numeric:tabular-nums; }
+#placement-rank > button{ padding:0 var(--s2); }
+#placement-detail input:focus-visible{
+  outline:2px solid var(--blue); outline-offset:2px;
+}
+#placement-detail input:disabled{ opacity:.45; cursor:not-allowed; }
+#placement-detail #placement-label-save{ flex:none; padding:0 var(--s3); }
+

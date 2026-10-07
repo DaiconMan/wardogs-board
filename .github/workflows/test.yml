@@ -1,0 +1,68 @@
+name: test
+
+# テストだけを走らせる。**デプロイの workflow は置いていない。**
+#
+# EN: Tests only. **There is deliberately no deploy workflow here.**
+#     A fork would otherwise try to deploy to Cloudflare on its first push,
+#     fail for want of secrets, and leave a confusing red X. Deploying is a
+#     deliberate act: read the README and run `npm run deploy` yourself.
+#
+# fork した人が最初の push でいきなり Cloudflare へのデプロイを試み、
+# secrets が無くて落ちる——という形にしたくない。デプロイは意図してやるもので、
+# README を読んでから手元で `npm run deploy` を叩く。
+#
+# **ネットワークに出るのは2つだけ。**
+#   * `npm ci` と `npx playwright install` のダウンロード
+#   * Turnstile のテストが challenges.cloudflare.com へ POST する（公式のテスト用キー）
+# 本番のサイトや他人の D1 には一切アクセスしない。テストはローカルに立てた
+# `wrangler pages dev` と `wrangler dev` だけを相手にする。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (vitest + playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 を使う理由（Node 20 では動かない）:
+      #   wrangler 4.x   engines: node >= 22.0.0
+      #   vitest 5.x     engines: node ^22.12.0 || ^24.0.0 || >=26.0.0
+      # Node 20 だと wrangler が「requires at least Node.js v22.0.0」で即終了し、
+      # tests/global-setup.js の schema.sql 適用に失敗する。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Playwright 用のブラウザとシステムライブラリ。CI では sudo が使えるので --with-deps を付ける。
+      - run: npx playwright install --with-deps chromium
+
+      # 統合テスト。ローカルの `wrangler pages dev` を 5 インスタンス立てて叩く。
+      - name: npm test (vitest)
+        run: npm test
+
+      # UIテスト。こちらもローカルの `wrangler pages dev`（8832）と
+      # `wrangler dev`（8833）を叩く。
+      - name: npm run test:ui (playwright)
+        run: npm run test:ui
+
+      # 失敗時に原因が分かるよう HTML レポート（trace / screenshot 込み）を残す
+      - name: upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,683 @@
+/* /plan のスタイル: 盤面そのもの（地図・エリア・ガター・射程・マーカー・地名・塔・円・スポーン）
+   plan.html の <style> から切り出したもの（元の順番のまま）。
+   **読む順を変えないこと。** 後に読むほうが勝つので、順番が変わると見た目が変わる。 */
+/* ── 盤面（主役）─────────────────────────────────────────── */
+main{ flex:1; min-height:0; position:relative; display:flex; }
+#board{
+  width:100%; height:100%; display:block;
+  touch-action:none;                 /* ページスクロールと取り合わない */
+  /* マップの外周。ゲームのフルマップ（map-20）と同じく、明るい航空写真を
+     濃い地が囲む。開いた直後は coverView なので、ここは引き切ったときだけ見える。 */
+  background:var(--void);
+}
+#board[data-mode="pen"]{ cursor:crosshair; }
+#board[data-mode="eraser"]{ cursor:cell; }
+/* 配置モードでもドラッグはパンなので、掴んでいる間は下の grabbing が勝つ
+   よう、place より後ろに data-panning を書く。地名を置くのも「足す」操作
+   なので同じカーソルにする。 */
+#board[data-mode="place"], #board[data-mode="callout"]{ cursor:copy; }
+/* エリアは「マス目を塗る」操作なので、マス目のカーソルにする。 */
+#board[data-mode="zone"]{ cursor:cell; }
+/* パンできる状態（移動ツール・スペースキー）は掴める手にする。
+   実際に掴んでいる間（data-panning / マーカーの data-dragging）が
+   最後に来るよう、この順で書く。 */
+#board[data-mode="pan"], #board[data-grab="true"]{ cursor:grab; }
+#board[data-panning="true"], #board[data-dragging="true"]{ cursor:grabbing; }
+
+/* 背景の地図。画像が無くても（404でも）ここが空になるだけで、
+   グリッドもインクもそのまま出る。 */
+#basemap-layer{ pointer-events:none; }
+
+/* 罫線とラベルは「見るもの」で「掴むもの」ではない。消しゴムの当たり判定や
+   線のホバーを邪魔しないよう、まとめて当たり判定から外す。 */
+#grid, #grid-fine{ pointer-events:none; }
+/* ゲーム内グリッドと同じ 1km ごとの罫線（A–P × 1–16 の 256セル）。
+   --line だと暗い配色で沈むため --muted を薄く敷く。 */
+#grid line{
+  stroke:var(--muted); stroke-opacity:.45; stroke-width:1;
+  vector-effect:non-scaling-stroke;
+  shape-rendering:crispEdges;        /* 1px の罫線をにじませない */
+}
+/* 寄ったときだけ出る 100m の補助線。1km の線より必ず弱くする。 */
+#grid-fine line{
+  stroke:var(--muted); stroke-opacity:.18; stroke-width:1;
+  vector-effect:non-scaling-stroke;
+  shape-rendering:crispEdges;
+}
+
+/* ── エリア（自陣・敵陣・中立・最重要・危険予測）───────────────────
+   ゲーム内と同じ 1km セルの集合を塗る（設計書 §3-A-1 / DECISIONS D-030）。
+   層は「地図の上・グリッドの下」。罫線とガターの見出しが塗りに埋もれないように
+   する。当たり判定は持たせない（どのセルかは座標の計算で決めるので、
+   256個の矩形を DOM に置く必要がない）。
+
+   **ここで塗るのは全部チームの見立て。** ゲームが決めるもの（コントロールエリア
+   ＝半径500mの円、ホットゾーン＝半径85m）は下の #zone-preset が円で描く実データ。
+   以前はこちらにも「コントロールエリア」「ホットゾーン」があり、見た目が違うのに
+   名前が同じだった。種類の名前をチームの語彙に貼り替えてある。
+
+   色は新しく足さず、既存トークンの割り当てだけをここで決める。
+   敵陣に --red を回すのは D-030 の決定6。デッドゾーンは「破線の円」、敵陣は
+   「面の塗り」で視覚的な役割が別で、同じものの上に赤が2つ出ることが無い。
+   混同されたら --cursor-6（ローズ）に差し替える（変えるのはここ1箇所）。
+   危険予測に --red を回さないのも同じ理由（赤い面が2つになると、どちらが敵で
+   どちらが予測か形でしか分からなくなる）。--hot は「未確認・未検証」の色なので、
+   **予測であって事実でない**という意味とそのまま噛み合う。 */
+:root{
+  --area-own:var(--blue);
+  --area-enemy:var(--red);
+  --area-neutral:var(--muted);
+  --area-key:var(--green);
+  --area-risk:var(--hot);
+}
+#areas{ pointer-events:none; }
+#areas .area-fill{ stroke:none; }
+/* 外周だけを引く。太さは画面固定にする（寄ると縁が帯になって境目が読めない）。 */
+#areas .area-edge{
+  fill:none; stroke-width:2; stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+}
+/* 縁の下敷き。モノクロの航空写真の上では、細い線は地形の模様に紛れて見つけられない
+   （D-028 でマーカーに白のハローを回したのと同じ症状）。特に中立は色が --muted で
+   1km の罫線と同じなので、これが無いと境目がまったく読めなかった（実測）。 */
+#areas .area-halo{
+  fill:none; stroke:var(--panel); stroke-width:5; stroke-opacity:.8;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+/* 色は5種とも違え、そのうえで塗り方（ベタ・斜線・点描・格子・塗らない）でも
+   分ける。色だけに頼らないのは配置マーカーの二重符号化と同じ考え方。 */
+#areas .area[data-kind="own"] .area-fill{ fill:var(--area-own); fill-opacity:.14; }
+#areas .area[data-kind="own"] .area-edge{ stroke:var(--area-own); }
+#areas .area[data-kind="enemy"] .area-fill{ fill:url(#area-pat-enemy); }
+#areas .area[data-kind="enemy"] .area-edge{ stroke:var(--area-enemy); }
+/* 中立は「どちらでもない」なので塗らない。縁だけにして、さらに破線にする。 */
+#areas .area[data-kind="neutral"] .area-fill{ fill:none; }
+#areas .area[data-kind="neutral"] .area-edge{
+  stroke:var(--area-neutral); stroke-dasharray:7 5;
+}
+#areas .area[data-kind="key"] .area-fill{ fill:url(#area-pat-key); }
+#areas .area[data-kind="key"] .area-edge{ stroke:var(--area-key); }
+#areas .area[data-kind="risk"] .area-fill{ fill:url(#area-pat-risk); }
+#areas .area[data-kind="risk"] .area-edge{ stroke:var(--area-risk); }
+/* 種類名。地図と同じ座標系にいるので、文字の大きさは app.js が
+   metersPerPx() から逆算して画面基準に戻す（縁取りの太さだけは
+   non-scaling-stroke でそのまま画面固定にできる）。 */
+#areas .area-name{
+  fill:var(--ink); font-weight:700;
+  text-anchor:middle; dominant-baseline:central;
+  paint-order:stroke; stroke:var(--panel); stroke-width:4; stroke-opacity:.9;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+  pointer-events:none; user-select:none; -webkit-user-select:none;
+}
+/* 寄ったときは消す（色とパターンで分かるので、文字は邪魔になるだけ）。 */
+#areas[data-names="off"] .area-name, #areas .area-name:empty{ display:none; }
+/* ドラッグ中のプレビュー。離す前に「どこが塗られるか」を必ず見せる。
+   これがあるので、ドラッグでもパンと取り違えない（D-028 の懸念に抵触しない）。 */
+#areas .area-preview{
+  fill:var(--blue); fill-opacity:.18;
+  stroke:var(--blue); stroke-width:2; stroke-dasharray:6 4;
+  vector-effect:non-scaling-stroke;
+}
+/* 塗りパターンの中身。<pattern> は <defs> の中にいても CSS は効く。
+   色を presentation attribute に書くと var() が使えないので、こちらで塗る。 */
+#board defs .pat-bg{ stroke:none; }
+#board defs .pat-line{ fill:none; stroke-width:1.4; stroke-opacity:.85; }
+#area-pat-enemy .pat-bg{ fill:var(--area-enemy); fill-opacity:.12; }
+#area-pat-enemy .pat-line{ stroke:var(--area-enemy); }
+#area-pat-key .pat-bg{ fill:var(--area-key); fill-opacity:.10; }
+#area-pat-key .pat-dot{ fill:var(--area-key); fill-opacity:.9; }
+/* 格子は縦横2本ぶんが重なるので、斜線と同じ濃さにすると面が潰れて
+   下の地形が読めなくなる（実測で確認）。線を細く・薄くして釣り合わせる。 */
+#area-pat-risk .pat-bg{ fill:var(--area-risk); fill-opacity:.10; }
+#area-pat-risk .pat-line{ stroke:var(--area-risk); stroke-width:1; stroke-opacity:.55; }
+/* ── セルの呼び名（A1〜P16）のガター ──────────────────────────
+   以前は 256個の <text> を地図の上に撒いていたが、390px の実機では文字が
+   重なって `A10B10C10D10…` と潰れ、地図がほとんど見えなくなっていた。
+   地図の上から文字を退かし、盤面の縁に列と行の見出しを出す（海図と同じ形）。
+
+   帯の位置・大きさ・中身は app.js の updateGutter() が付ける。ここは見た目だけ。
+   書体は等幅。盤面のセル名・右下の座標表示・詳細の「位置」を同じ字面で
+   揃えることが、この画面の通し番号（グリッド参照）の見た目になる。 */
+#gutter, #cell-names{
+  position:absolute; inset:0; overflow:hidden; pointer-events:none;
+  font-family:var(--font-data); font-weight:700;
+}
+#gutter-cols, #gutter-rows{
+  position:absolute;
+  /* 地図に接する帯。ゲームのフルマップ（map-20）と同じで、**明るい航空写真の
+     上に濃い下地と白い細線**。地図を隠さず、文字だけ確実に読ませる。 */
+  background:rgba(12,15,18,.55);
+}
+/* 地図に面した側にだけ細い罫線を引く。どちらの方向の見出しかが一目で分かる。 */
+#gutter-cols{ border-bottom:1px solid var(--hud-line); }
+#gutter-rows{ border-right:1px solid var(--hud-line); }
+#gutter .gl{
+  position:absolute; top:50%; left:0;
+  transform:translate(-50%, -50%);
+  font-family:var(--font-display); font-weight:600;
+  font-size:var(--t-small); line-height:1; color:var(--hud-ink);
+  letter-spacing:.1em; white-space:nowrap;
+}
+/* 行の見出しは縦に並ぶので、位置の基準が上下だけ入れ替わる。 */
+#gutter-rows .gl{ top:0; left:50%; }
+/* 寄ったときだけ出る、セルの真ん中の名前。最大4個しか出ない。
+   薄い文字を航空写真の上に置いても読めない（実機のスクリーンショットで確認）。
+   濃さではなく、パネル色の淡いにじみで地形から浮かせる。 */
+#cell-names .cn{
+  position:absolute; transform:translate(-50%, -50%);
+  font-family:var(--font-display); font-weight:600;
+  font-size:var(--t-head); color:#FFF; opacity:.6;
+  letter-spacing:.14em; white-space:nowrap;
+  text-shadow:0 0 4px rgba(0,0,0,.9), 0 0 10px rgba(0,0,0,.7);
+}
+
+/* カーソル位置のゲーム内座標（ゲーム画面と同じ `x78.67 y71.62` の形）とセル名。
+   **座標が主役、セル名は補助。**
+   チーム内の会話は地名や目印で行われていて、座標は「正確に伝えるための道具」
+   として使われる。しかも**ゲームはセル名（A1〜P16）を表示しない**（軸に出るのは
+   km の数字だけ）。ゲームの画面で照合できるのは座標のほうなので、そちらを大きく出す。
+   セル名は盤面のガターと重複する情報なので、小さく添えるだけにする。
+   DOM の順は「座標 → セル名」で、見た目の順もそのまま（order を使わない）。
+   等幅（--font-data）と tabular-nums は維持する — 数値は桁が揃って初めて読める。 */
+/* 縮尺と座標は**同じ縁に縦に積む**。ゲームのフルマップ（map-20）も
+   `1KM` と `x73.30 / y97.84` を右の縁にまとめている。
+   重ならないことは flex が保証する（別々に絶対配置して隅を取り合わない）。 */
+#map-readouts{
+  position:absolute; right:var(--s2);
+  bottom:calc(var(--chrome-bottom, 64px) + var(--s2));
+  display:flex; flex-direction:column; align-items:flex-end; gap:var(--s1);
+  z-index:1; pointer-events:none;
+}
+#readout{
+  display:flex; align-items:baseline; gap:var(--s2);
+  padding:4px 8px; border-radius:var(--radius);
+  background:var(--hud); color:var(--hud-ink);
+  border:1px solid var(--hud-line);
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+  white-space:nowrap; pointer-events:none;
+}
+/* 主役。ゲーム画面の数字と見比べる値なので、いちばん大きく濃く出す。 */
+#readout .xy{
+  font-size:var(--t-lead); font-weight:700; line-height:1.2;
+  color:var(--hud-ink); letter-spacing:.04em;
+}
+/* 補助。盤面のガターにも同じ文字が出ているので、ここでは添えるだけ。 */
+#readout .cell{
+  font-size:var(--t-micro); line-height:1.4; color:var(--hud-muted); letter-spacing:.08em;
+}
+#readout .cell:empty{ display:none; }
+/* 右クリック（指なら長押し）で座標をコピーできることの案内。
+   フッターのボタンを増やさずに、操作の存在を画面から見つけられるようにする。
+   狭い画面と、何か言っている最中（.paint が入っている間）は出さない。 */
+#readout .copyhint{
+  font-size:var(--t-eyebrow); line-height:1.4; color:var(--hud-muted); opacity:.9;
+  font-family:var(--font-ui); letter-spacing:0;
+}
+#readout .copyhint:empty{ display:none; }
+/* エリアを塗っている最中だけ出る「3×2 = 6マス」。離す前に結果を見せる。
+   座標より先に読ませたいので DOM でも先頭に置いてある（order は使わない）。 */
+#readout .paint{
+  font-size:var(--t-small); font-weight:700; line-height:1.2;
+  color:var(--blue-bright); letter-spacing:.04em;
+}
+#readout .paint:empty{ display:none; }
+
+/* 縮尺（スケールバー）。GoogleMap の左下にあるのと同じ考え方で、バーの長さを
+   固定して「137m」と書くのではなく、きりのいい距離（100m / 200m / 500m / 1km …）を
+   選んでバーの側を伸縮させる。長さは app.js が px で入れる。
+   倍率（「×2.5」）は出さない。作戦で持ち出されるのは距離であって倍率ではない。
+   右下は座標表示が使っているので、こちらは左下に置く。 */
+#scale-wrap{
+  display:flex; align-items:center; gap:var(--s2);
+  padding:4px 8px; border-radius:var(--radius);
+  background:var(--hud); border:1px solid var(--hud-line);
+  pointer-events:none;
+}
+#scale-wrap[hidden]{ display:none; }
+#scalebar{
+  display:flex; align-items:center; gap:var(--s2);
+  /* 座標表示・セル名と同じ等幅。この画面の数値はすべて同じ字面で揃える。 */
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+  font-size:var(--t-small); line-height:1.2; color:var(--hud-ink);
+  white-space:nowrap;
+}
+/* 目盛りは両端に足のある1本の線（⊔ の形）。端がどこかを迷わせない。 */
+#scalebar .bar{
+  display:block; height:7px; flex:none;
+  border:1px solid var(--hud-ink); border-top:0;
+}
+/* **「未検証」はここに出す。** マップの一辺（= この縮尺の根拠）が未確認だという
+   話なので、ヘッダに常駐させるのではなく**その数値のすぐ隣**に置く
+   （D-026「未検証の数値を確定値のように見せない」は維持。出す場所だけ変える）。 */
+#scale-wrap #unverified{
+  pointer-events:auto; cursor:help;
+  font-size:var(--t-eyebrow); line-height:1.5; padding:0 4px;
+}
+
+/* マップの縁。盤面の余白（マップ外）との境目をはっきりさせる。
+   当たり判定には出さない（消しゴムが縁を掴まないように）。 */
+#zones{ pointer-events:none; }
+#map-bounds{
+  stroke:var(--muted); stroke-opacity:.6; stroke-width:2;
+  vector-effect:non-scaling-stroke;
+}
+/* 消しゴムのとき、指した線が消える対象だと触る前に分かるようにする。 */
+#board[data-mode="eraser"] #ink path:hover{ opacity:.3; }
+
+/* ── 他の人が引いている最中の線（Phase R2b）────────────────────
+   VC で「ここからここへ抜ける」と言いながら引いている数秒を、相手の画面でも
+   見えている状態にする（それまでは引き終わるまで何も起きていなかった）。
+
+   **押せない。** まだ保存されていない線なので、消しゴムが掴むと
+   「消したのに消えない」ことになる（D1 にその行が無い）。
+
+   **確定した線と見分けがつく状態にする**（仕様の明示）。薄くして破線にする
+   ——`vector-effect:non-scaling-stroke` が効いているので、破線の刻みは
+   **画面基準**で一定になり、寄っても引いても同じ見た目で読める。
+   色と太さは本人のペンのまま（確定した瞬間に形も色も変わらない）。
+
+   消えるのは、確定した線が再取得で着地したとき（board/live.js の settleLive）か、
+   引いた人が中断・切断したとき。**カーソルを消すのと同じ処理が消す。** */
+#live-ink{ pointer-events:none; }
+#live-ink path[data-live]{ opacity:.55; stroke-dasharray:9 7; }
+/* 動きを減らす設定でも破線は残す（これは動きではなく「未確定」の印）。 */
+
+/* ── 射程リングと建築範囲（実寸・メートル）─────────────────────
+   ここは「意味のある寸法」なので、地図と同じ縮尺で伸縮させる。
+   線の太さだけは non-scaling-stroke で画面基準に固定する（寄ったときに
+   リングが帯になって半径が読めなくなるのを防ぐ）。 */
+#ranges{ pointer-events:none; }
+/* 複数置いたときに見分けがつくよう、選択中だけをはっきり出す。 */
+#ranges .rng{ opacity:.45; }
+#ranges .rng.sel{ opacity:1; }
+/* 「届く範囲」の半透明の塗り。最小射程があると内側は穴になる（撃てない）。 */
+#ranges .rng-band{ fill:var(--blue); fill-opacity:.10; stroke:none; }
+#ranges .rng.sel .rng-band{ fill-opacity:.2; }
+#ranges .rng-max{
+  fill:none; stroke:var(--blue); stroke-width:2; vector-effect:non-scaling-stroke;
+}
+#ranges .rng.sel .rng-max{ stroke-width:3; }
+/* 最小射程＝デッドゾーンの縁。「ここには撃てない」ので警告色の破線にする。 */
+#ranges .rng-min{
+  fill:none; stroke:var(--red); stroke-width:2; stroke-dasharray:6 5;
+  vector-effect:non-scaling-stroke;
+}
+/* FOB の建築範囲。正方形であることは確認済みだが一辺が未確認なので、
+   確定した寸法（実線の射程リング）とは違う見た目（注意色の破線）にする。 */
+#ranges .fob-range{
+  fill:none; stroke:var(--hot); stroke-width:2; stroke-dasharray:8 6;
+  vector-effect:non-scaling-stroke;
+}
+
+/* ── ホットゾーンの円（実寸・半径 85m）────────────────────────
+   **コントロールエリアの円（#zone-preset）と見間違えないことが、この見た目の要件。**
+   寄れば画面上の大きさは同じになるので、大きさ以外の軸でも必ず分ける。
+     大きさ … 半径 85m（あちらは 500m）
+     色     … --hot（あちらは無彩色）。ゲームの黄色いホットゾーンに寄せる
+     線     … 破線（あちらは実線）。「動くもの・チームの想定」を形でも示す
+     中心   … 掴めるピン（あちらは触れない十字）
+   新しい色は足していない（--hot の割り当てだけ）。 */
+#hotzones{ pointer-events:none; }
+/* 面はごく薄く。「円の中か外か」が読めればよく、地形を消してはいけない。 */
+#hotzones .hz-face{ fill:var(--hot); fill-opacity:.14; stroke:none; }
+/* 背景から浮かせるハロー（マーカー・円・塔と同じ手）。 */
+#hotzones .hz-halo{
+  fill:none; stroke:var(--panel); stroke-width:6; stroke-opacity:.9;
+  vector-effect:non-scaling-stroke;
+}
+#hotzones .hz-ring{
+  fill:none; stroke:var(--hot); stroke-width:2.4; stroke-dasharray:7 5;
+  vector-effect:non-scaling-stroke;
+}
+/* 選んでいる円だけ線を太くする（複数置いたとき、どれの話かが分かるように）。
+   マーカーの選択（ハローが青くなる）と同じ出来事なので、色は変えない。 */
+#hotzones .hz.sel .hz-ring{ stroke-width:4; }
+#hotzones .hz.sel .hz-face{ fill-opacity:.22; }
+/* 「人数×2」の札。円の上端に置く。**円そのものは実寸、札だけ画面固定**
+   （app.js が metersPerPx で scale を当てる）。寄ったときだけ出す。 */
+#hotzones .hz-name{
+  font-size:var(--t-small); font-weight:700; fill:var(--ink); letter-spacing:.04em;
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+
+/* ── 配置のマーカー（画面上で一定の大きさ）─────────────────────
+   footprint が全項目 NULL で実寸が描けないので、マップ座標ではなく
+   画面基準の大きさにする（app.js が scale で倍率を打ち消す）。
+   種別は形と色の二重符号化で分ける（色だけに頼らない）。 */
+
+/* 種別の色。新しい色は足さず、既存トークンの割り当てだけをここで決める。
+   --red は「最小射程＝撃てない範囲」の意味で使っているので種別には回さない。
+   同じ理由で --hot は「未確認」を含意するが、こちらは種別の1つに当てる
+   （設置物は射程・寸法とも未検証の代表なので意味がぶつからない）。 */
+:root{
+  --pm-structure:var(--blue);
+  --pm-emplacement:var(--hot);
+  --pm-vehicle:var(--green);
+  --pm-unknown:var(--muted);
+}
+#placements .pm{ cursor:pointer; --pm:var(--pm-unknown); }
+#placements .pm[data-kind="structure"]{ --pm:var(--pm-structure); }
+#placements .pm[data-kind="emplacement"]{ --pm:var(--pm-emplacement); }
+#placements .pm[data-kind="vehicle"]{ --pm:var(--pm-vehicle); }
+
+/* 試合の要素（ドリル位置・HQ・スポーン・敵FOB と、判断を書き込む記号）。
+   形はピンで統一してあるので、色は種別ではなく記号ごとに配る
+   （割り当ての一覧は placements.js の OBJECTIVE_GLYPH と対で持つ）。
+   新しい色は足さず、既存トークンの配り直しだけで済ませる。
+   --red をここで使うのは、最小射程（撃てない範囲）が「破線の円」なのに対し
+   こちらは「ピンの塗り」で、同じ配置の上に赤が2つ出ることが無いため。
+   敵・危険に赤を使わないほうが、読むたびに読み替えが要って遅い。
+   この規則は data-kind より後に書く（同じ詳細度なので後勝ちで上書きする）。 */
+#placements .pm[data-item-id="mk_hotzone"]{ --pm:var(--hot); }
+#placements .pm[data-item-id="mk_drill"]{ --pm:var(--hot); }
+#placements .pm[data-item-id="mk_hq"]{ --pm:var(--blue); }
+#placements .pm[data-item-id="mk_spawn"]{ --pm:var(--green); }
+#placements .pm[data-item-id="mk_enemy_fob"]{ --pm:var(--red); }
+#placements .pm[data-item-id="mk_defend"]{ --pm:var(--blue); }
+#placements .pm[data-item-id="mk_attack"]{ --pm:var(--hot); }
+#placements .pm[data-item-id="mk_danger"]{ --pm:var(--red); }
+#placements .pm[data-item-id="mk_note"]{ --pm:var(--muted); }
+
+/* 背景から浮かせるハロー。モノクロの航空写真の上では、細い枠線の図形は
+   地形の模様に紛れて見つけられない。同じ形を一回り太い紙色の線で下に敷く。
+   下敷きなので当たり判定には出さない（掴みどころを甘くしない）。 */
+#placements .pm-halo{
+  fill:none; stroke:var(--panel); stroke-width:6; stroke-opacity:.9;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke; pointer-events:none;
+}
+#placements .pm-shape{
+  fill:var(--pm); stroke:var(--ink); stroke-width:1.5;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+#placements .pm:hover .pm-shape, #placements .pm.sel .pm-shape{ stroke-width:3; }
+
+/* ピンの頭に入れる1〜2文字。8種類とも同じ形なので、色だけに頼らず
+   文字でも見分けられるようにする（マーカーと同じ scale の中にあるので、
+   ズームしても見た目の大きさは変わらない）。
+   文字は暗い色で固定する。載る面（--blue / --green / --hot / --red / --muted）は
+   どちらの配色でも中〜明なので、ダークで --ink（ほぼ白）に反転させると消える。
+   ダークでは --paper（#0F1926）に差し替えて、両方の配色で暗い字のままにする。 */
+#placements .pm-glyph{
+  font-size:var(--t-eyebrow); font-weight:700; fill:var(--ink);
+  pointer-events:none; user-select:none; -webkit-user-select:none;
+}
+@media (prefers-color-scheme: dark){
+  #placements .pm-glyph{ fill:var(--paper); }
+}
+/* 優先度（1〜9）の数字。形の中心にはグリフが入っているので、重ねると
+   どちらも読めなくなる。両方を持つ配置はありうるため、数字は形の右上に
+   小さな円で貼る（位置は種別によらず同じ。いつも右上を見ればよい）。
+   円は盤面と同じ面色で塗って本文色の輪で囲む。モノクロの航空写真の上でも、
+   ライトでもダークでも、地形に紛れずに数字が読める組み合わせになる。 */
+#placements .pm-rank-disc{
+  fill:var(--panel); stroke:var(--ink); stroke-width:1.5;
+  vector-effect:non-scaling-stroke;
+}
+#placements .pm-rank{
+  font-size:var(--t-eyebrow); font-weight:700; fill:var(--ink);
+  font-family:var(--font-data); font-variant-numeric:tabular-nums;
+  pointer-events:none; user-select:none; -webkit-user-select:none;
+}
+
+/* 選択中はハローを青に変える。塗りは種別の色に使っているので、
+   そちらでは「選んでいる」を示せない。
+   この青は #placement-detail の左端の線と同じ色で、盤面の選択と
+   右上のパネルが同じものを指していることを示す。 */
+#placements .pm.sel .pm-halo{ stroke:var(--blue); stroke-width:8; stroke-opacity:1; }
+
+/* 項目名。常時出すと置いた数だけ文字が重なって読めなくなるので、
+   ホバーと選択のときだけ出す。地図の上でも読めるよう紙色で縁取る。
+   座標は CSS px（マーカーと同じ scale の中）なので、ズームしても
+   見た目の大きさは変わらない。 */
+#placements .pm-label{
+  font-size:var(--t-micro); font-weight:700; fill:var(--ink);
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.92;
+  stroke-linejoin:round;
+  pointer-events:none;
+  /* visibility:hidden ではなく display:none。SVG では visibility:hidden でも
+     図形の範囲（bbox）に残るので、マーカーの <g> が名前のぶん下に伸びて
+     「マーカーの中心」が図形から外れてしまう（掴みどころがずれる）。 */
+  display:none;
+}
+#placements .pm:hover .pm-label, #placements .pm.sel .pm-label{ display:block; }
+/* 注記が書いてあるマーカーは、選んでいなくても文字を出す。
+   「ここ守ろう」は、見えていなければ書いた意味が無い。
+   地図が文字で埋まらないよう、視野が広いときは app.js が先頭6文字に詰める。 */
+#placements .pm[data-note="true"] .pm-label{ display:block; }
+
+/* 動かせる配置だけカーソルで示す（app.js が data-mine を付ける）。
+   掴んでいる間の grabbing が勝つよう、この順で書く。 */
+#placements .pm[data-mine="true"]{ cursor:move; }
+#board[data-dragging="true"] .pm{ cursor:grabbing; }
+
+/* ── 地名（コールアウト）───────────────────────────────────
+   地名は「置いた物」ではなく「地図に元からある情報」。配置マーカー（形＋種別の色）
+   とは意図的に違う規則で出す。
+
+     置いた物 … 形（四角・三角・丸・ピン）＋種別の色。名前は形の真下に小さく
+     地名     … 小さな点＋その右に文字。色は無彩色（--ink / --panel）だけ
+
+   GoogleMap で地名がピンではなく文字で書かれているのと同じ理屈で、文字そのものを
+   地図に置く。枠も吹き出しも付けない（付けると「置いた物」に見える）。 */
+#callouts .co{ cursor:pointer; }
+/* 点。モノクロの航空写真に沈まないよう、紙色の輪を外側に回す（マーカーのハローと同じ手）。 */
+#callouts .co-halo{
+  fill:none; stroke:var(--panel); stroke-width:4; stroke-opacity:.95;
+  vector-effect:non-scaling-stroke; pointer-events:none;
+}
+#callouts .co-dot{ fill:var(--ink); stroke:none; }
+/* 名前。座標は CSS px（点と同じ scale の中）なので、ズームしても大きさは変わらない。
+   マーカーの項目名（11px・中央下）と紛れないよう、12px で点の右に置く。
+   当たり判定は外さない（配置の項目名とはここが違う）。地名は文字そのものが本体で、
+   3.5px の点だけを狙わせるのは細かすぎる。名前を伏せているときは display:none
+   なので、見えていない文字が盤面を掴むことは無い。 */
+#callouts .co-name{
+  font-size:var(--t-small); font-weight:700; fill:var(--ink); letter-spacing:.02em;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3.5px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+/* 広く見ているときは点だけにする。上限の 200 件が 16km 四方に同時に出ると、
+   地形が文字で埋まって読めなくなる（セル名 256 個で踏んだのと同じ失敗）。
+   選んでいるものと、カーソルの下だけは広くても名前を出す。 */
+#callouts[data-names="off"] .co-name{ display:none; }
+#callouts[data-names="off"] .co:hover .co-name,
+#callouts[data-names="off"] .co.sel .co-name{ display:block; }
+/* 選択中は輪を青に変える。配置マーカーのハロー・詳細パネルの左端と同じ青で、
+   盤面とパネルが同じものを指していることを示す。 */
+#callouts .co.sel .co-halo{ stroke:var(--blue); stroke-width:7; stroke-opacity:1; }
+/* 動かせる地名だけカーソルで示す（配置と同じ作法）。 */
+#callouts .co[data-mine="true"]{ cursor:move; }
+#board[data-dragging="true"] .co{ cursor:grabbing; }
+
+/* ── 他の人が運んでいる最中のもの（Phase R2a）───────────────────
+   運ばれている間、ハローを**運んでいる人のカーソル色**に変える。
+   選択の青（.sel）と同じ仕組みに乗せ、新しい層も新しい図形も足さない。
+
+   VC で「それ動かしてるの俺」が言わなくても伝わる状態にするためで、
+   運んでいる人の名前は出さない（その人のカーソルがすぐ隣にある）。
+
+   .sel より後に置いてあるのは、**選択より「いま動いている」を優先して見せる**ため
+   （同じ詳細度なので後が勝つ）。選んでいることは右のパネルにも出ている。
+
+   色は board/carry.js が --carry に入れる（--cursor-1〜8 のどれか）。
+   **位置は絵だけが動いていて、保存された座標は変わっていない**（D1 が唯一の真実）。 */
+#placements .pm[data-carry] .pm-halo{ stroke:var(--carry); stroke-width:8; stroke-opacity:1; }
+#callouts .co[data-carry] .co-halo{ stroke:var(--carry); stroke-width:7; stroke-opacity:1; }
+/* 滑らかさは CSS に任せる（他の人のカーソルと同じ理由と同じ値）。届くのは
+   送信間隔ごとの位置なので、JS で補間せず transition 1行で繋ぐ。
+   長さは `--cursor-tween`（board/cursor.js が在室の人数から入れる。既定 100ms）。
+   **運ばれている間だけ**掛ける。常時掛けると自分のドラッグが遅れて付いてくる。 */
+#placements .pm[data-carry], #callouts .co[data-carry]{
+  transition:transform var(--cursor-tween, 100ms) linear;
+}
+/* cursor は変えない（= 掴めるままに見せる）。同じ物を2人が触ったときは
+   手元の操作が勝つので（board/carry.js）、掴めないように見せるのは嘘になる。 */
+
+/* ── 他の人のカーソル（Phase R1）─────────────────────────────
+   「同時に同じ画面を見ながら」の本体。VC で「ここ」と言ったときに、
+   相手の画面でも同じ地点が指されている状態を作る。
+
+   **押せない。** 他人のカーソルが自分の盤面の操作を奪ってはいけない
+   （線を引こうとしたら相手のカーソルを掴んだ、が起きる）。
+
+   **滑らかさは CSS に任せる。** JS で補間すると 50人 × 60fps の
+   requestAnimationFrame を回すことになる。transition 1行で足りる。
+
+   **長さは送信間隔と同じにする。** 次の位置が届くころにちょうど補間が終わる
+   状態が狙いで、短いと遷移が先に終わって残りの時間だけカーソルが止まる
+   （＝カクつく）。送信間隔は在室の人数で変わる（50人なら 250ms。
+   public/js/plan/cursors.js の `CURSOR_RATE_TIERS`）ので、
+   **固定の 100ms にしない。** 値は board/cursor.js の `setCursorPeers` が
+   `--cursor-tween` に入れる。既定の 100ms は在室10人までのときの値で、
+   JS が何も入れなかった場合（繋がっていない等）もこれになる。 */
+#cursor-layer{ pointer-events:none; }
+#cursor-layer .cursor{ transition:transform var(--cursor-tween, 100ms) linear; }
+/* 矢印。地形に沈まないよう紙色の縁を回す（マーカー・地名のハローと同じ手）。 */
+#cursor-layer .cursor-arrow{
+  stroke:var(--panel); stroke-width:1.5; stroke-linejoin:round; paint-order:stroke;
+}
+/* 名前は常に出す。8色を超えると色相が重なるので（D-047 の未決事項。R1 では
+   塗り2種の16通りを実装しない）、重なっても誰かが分かる手段を残す。
+   地名（.co-name）と同じ組み方だが、色は本人の色にして一覧の粒と揃える。 */
+#cursor-layer .cursor-name{
+  font-size:var(--t-small); font-weight:700; letter-spacing:.02em;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3.5px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+/* Discord のアイコン。**色の輪の中身**として置く（在室の粒と同じ考え方。
+   丸をアイコンに差し替えると、ペンの色との結びつきが切れる。D-047 / D-068）。
+
+   丸く切るのは CSS の `clip-path`。SVG の `<clipPath>` を使うと id が要り、
+   カーソルの本数ぶん defs を作ることになる（同じ id を使い回すと、
+   1本消えたときに他のカーソルの切り抜きまで消える）。
+
+   **大きさはズームで変わらない。** 位置も大きさも `.cursor` の `<g>` の
+   中に書いてあり、board/cursor.js が掛ける逆スケールに相乗りしている。 */
+#cursor-layer .cursor-avatar-img{ clip-path:circle(50%); }
+/* 色の輪。矢印・名前と同じ色（在室の粒とも同じ）。 */
+#cursor-layer .cursor-ring{ stroke-width:2; }
+/* 動きを減らす設定の人には補間を切る（飛ぶが、酔わない）。 */
+@media (prefers-reduced-motion: reduce){
+  #cursor-layer .cursor{ transition:none; }
+}
+
+/* ── ドリルタワー（マップ固定の設備）──────────────────────────
+   ゲームが持っている物であって、チームが置いた物ではない。
+   置いた物（塗りつぶした形＋種別の色＋押せる）と、次の3点で分ける。
+
+     1. **塗らない**（線画）。塗りは「自分たちが置いた」の印にしてある
+     2. **無彩色**（--muted）。種別の色は置いた物のためのもの
+     3. **押せない**（pointer-events:none）。触れない＝自分たちの持ち物ではない
+
+   形は塔の線画（脚2本・接地線・筋交い）で、座標は**足元**。地面に立っている
+   物なので、中心ではなく接地点をその地点に置く。 */
+#towers{ pointer-events:none; }
+/* 背景から浮かせるハロー。配置マーカーと同じ手（同じ形を太い紙色の線で下に敷く）。 */
+#towers .tw-halo{
+  fill:none; stroke:var(--panel); stroke-width:5; stroke-opacity:.9;
+  stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+#towers .tw-mark{
+  fill:none; stroke:var(--muted); stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+/* 名前。足元の真下に小さく。地名（12px・点の右）とも配置の項目名（11px・中央下）
+   とも紛れないよう、10px の字間広めにして地図の注記らしく見せる。 */
+#towers .tw-name{
+  font-size:var(--t-micro); font-weight:700; fill:var(--muted); letter-spacing:.08em;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+/* 広く見ているときは塔の形だけにする。3〜5本が 600m 四方に固まっているので、
+   引いた状態で名前を出すと必ず重なる（towers.js の TOWER_NAME_VIEW_M）。 */
+#towers[data-names="off"] .tw-name{ display:none; }
+
+/* ── コントロールエリア（ゲームが決めた円）─────────────────
+   **チームが塗るエリア（#areas）と混同させないことが、この見た目の要件。**
+   あちらは「この辺を自陣と考える」というチームの判断、こちらはゲームの事実。
+   区別は3つの軸で付ける（色だけに頼らない）。
+     形      … 実寸の**円**（あちらは 1km のマス目）
+     描き方  … 太い**線**＋うっすらした面（あちらはパターンで塗る）
+     色      … **無彩色**（あちらは種別ごとの色）
+   タワー・スポーンと同じ「地図が持っている物」の語彙に合わせてあるので、
+   触れない（pointer-events:none）ことも含めて一目で仲間だと分かる。 */
+#zone-preset{ pointer-events:none; }
+/* 面はごく薄く。「円の中か外か」が読めればよく、地形を消してはいけない。 */
+#zone-preset .zp-face{ fill:var(--ink); fill-opacity:.07; }
+/* 背景から浮かせるハロー（タワー・スポーンと同じ手）。 */
+#zone-preset .zp-halo{
+  fill:none; stroke:var(--panel); stroke-width:6; stroke-opacity:.9;
+  vector-effect:non-scaling-stroke;
+}
+#zone-preset .zp-ring{
+  fill:none; stroke:var(--ink); stroke-width:2.4; stroke-opacity:.85;
+  vector-effect:non-scaling-stroke;
+}
+/* 中心は**オーナーが打った1点**なので、合っているか確かめられるよう印を出す。 */
+#zone-preset .zp-centre{
+  fill:none; stroke:var(--ink); stroke-width:1.4; stroke-opacity:.7;
+  vector-effect:non-scaling-stroke;
+}
+/* まだ保存していない、入力中のプレビュー。破線で「仮」だと分かるようにする。 */
+#zone-preset .zp-preview .zp-ring{
+  stroke:var(--blue); stroke-dasharray:7 5; stroke-opacity:1;
+}
+#zone-preset .zp-preview .zp-face{ fill:var(--blue); fill-opacity:.07; }
+#zone-preset .zp-preview .zp-centre{ stroke:var(--blue); stroke-opacity:.9; }
+/* 円の名前は円の上端に。常時出す（1枚しか出ないので重ならない）。 */
+#zone-preset .zp-name{
+  font-size:var(--t-small); font-weight:700; fill:var(--ink); letter-spacing:.06em;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+#zone-preset .zp-preview .zp-name{ fill:var(--blue); }
+
+/* 円の中に入っているドリルタワー（＝その試合で戦う対象）。
+   **形と濃さの両方**で変える。色だけだと、モノクロの航空写真の上では
+   「濃い灰色」と「灰色」の差が読めない。
+     * 線を太く・濃く（--muted → --ink）
+     * 足元に**塗りつぶした丸**を足す（形の変化。無い⇔ある は迷わない）  */
+#towers .tw[data-live="1"] .tw-mark{ stroke:var(--ink); stroke-width:2.6; }
+#towers .tw-live{ display:none; fill:var(--ink); }
+#towers .tw[data-live="1"] .tw-live{ display:inline; }
+#towers .tw[data-live="1"] .tw-name{ fill:var(--ink); }
+/* **パターンを選んでいるときは、円の外のタワーを出さない**（オーナー指示
+   2026-10-01。「有効のものだけ表示でお願いしたいです」）。付け外しは
+   app.js の renderZonePreset() → setTowerShown()。
+   UA の `[hidden]{display:none}` に頼らず、SVG でも効くことを明示しておく。 */
+#towers .tw[hidden]{ display:none; }
+
+/* ── 陣営スポーン（セーフゾーン）────────────────────────────
+   こちらもマップが持っている物なので押せない。ただしタワーと違い、
+   一辺 480m という**意味のある寸法**があるので実寸で描く（射程リングと同じ）。
+   陣営は既存トークンの3色で分ける。出典 JSON の色（#d86666 など）は入れない。 */
+#spawns{ pointer-events:none; }
+#spawns .sp{ --sp:var(--muted); }
+#spawns .sp[data-faction="lonestar"]{ --sp:var(--blue); }
+#spawns .sp[data-faction="manticore"]{ --sp:var(--green); }
+#spawns .sp[data-faction="valkyra"]{ --sp:var(--red); }
+#spawns .sp-halo{
+  fill:none; stroke:var(--panel); stroke-width:5; stroke-opacity:.9;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+/* 塗りは薄く。配置の塗り（不透明）と混ざらない濃さにする。 */
+#spawns .sp-shape{
+  fill:var(--sp); fill-opacity:.14;
+  stroke:var(--sp); stroke-width:2; stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+}
+/* 陣営名は中心に。3つしか無く、数km 離れているので常時出しても重ならない。 */
+#spawns .sp-name{
+  font-size:var(--t-micro); font-weight:700; fill:var(--sp); letter-spacing:.06em;
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.95;
+  stroke-linejoin:round;
+  user-select:none; -webkit-user-select:none;
+}
+

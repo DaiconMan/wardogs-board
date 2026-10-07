@@ -1,0 +1,27 @@
+# wardogs-room — Durable Object（PlanRoom）を持つだけの Worker。
+#
+# **Pages（ルートの wrangler.toml）とは別のデプロイ先。**
+# Pages プロジェクトの中に Durable Object を定義できないため、2本目の Worker が必要
+# （D-047 の決定3。調査 §5.1）。
+#
+# **ルートを足さないこと。** 認証しているのは Pages Function 側だけなので、
+# この Worker に公開の入口ができると x-wb-user を自分で書いた誰かが部屋に入れる。
+# `workers_dev = false` ＋ ルート未設定で外から到達できない状態を保つ。
+name = "wardogs-room"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+# 自分自身の DO を引くためのバインディング。Pages 側は同じ名前 + script_name で引く。
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "PlanRoom"
+
+# **`new_sqlite_classes` でなければならない。**
+# `new_classes` と書くと key-value backend の namespace ができ、
+# それは Workers 有料プラン専用になる（＝無料枠から出る。D-047 の2、調査 §1 の変更点B）。
+# PlanRoom は storage を一切使わないが、クラスの作成時に backend が決まるので
+# ここの1語が「無料か有料か」を決める。
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PlanRoom"]

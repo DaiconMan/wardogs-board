@@ -1,0 +1,47 @@
+# Cloudflare Pages プロジェクト設定
+#
+# EN: Cloudflare Pages project settings. The two values marked PUT-YOUR-OWN-VALUE-HERE
+#     are specific to one Cloudflare / Discord account and are NOT filled in here.
+#     See the README ("自分で立てる" / "Running your own copy") before deploying.
+name = "wardogs-board"
+pages_build_output_dir = "public"
+compatibility_date = "2026-09-01"
+
+# D1。
+#
+# **`database_id` は自分の値を入れる。** `npx wrangler d1 create <name>` の出力に
+# 出る UUID で、Cloudflare アカウントごとに違う。ここには入っていない。
+#
+# `database_name` が `wardogs-blue` なのは歴史的な理由（もとは青チーム専用の想定
+# だった）で、D1 にはデータベースを改名する手段が無いため上流ではそのままにして
+# ある。**新しく作るなら好きな名前でよい。** 結び先を決めるのは `database_id` の
+# ほうなので、名前は何でも動く。ただし `migrations/README.md` と README のコマンド
+# 例はこの名前で書いてあるので、変えるなら合わせて読み替えること。
+[[d1_databases]]
+binding = "DB"
+database_name = "wardogs-blue"
+database_id = "PUT-YOUR-OWN-DATABASE-ID-HERE"
+
+# リアルタイム（在室一覧・共有カーソル）用の Durable Object。
+#
+# **Pages プロジェクトの中に Durable Object は定義できない**
+# （"You cannot create and deploy a Durable Object within a Pages project."）。
+# 実体は別の Worker（workers/room、name = "wardogs-room"）にあり、ここからは
+# `script_name` を付けて借りる。**Pages では `script_name` が必須。**
+#
+# この Worker が動いていない環境（vitest の 8811-8814 / 8831）では
+# functions/api/sessions/[id]/ws.js が 503 を返し、他の API は全部そのまま動く。
+# リアルタイムは上乗せであって前提ではない。
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "PlanRoom"
+script_name = "wardogs-room"
+
+# 平文で置ける値だけ。
+#
+# **`DISCORD_CLIENT_ID` は自分の値を入れる。** Discord Developer Portal で作った
+# アプリケーションの ID で、**公開値**（ブラウザのリダイレクト先 URL に現れる）
+# なのでここにコミットしてよい。秘密なのは Client Secret のほうだけで、そちらは
+# Pages の Secrets か `.dev.vars` に置く。
+[vars]
+DISCORD_CLIENT_ID = "PUT-YOUR-OWN-DISCORD-CLIENT-ID-HERE"

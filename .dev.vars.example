@@ -1,0 +1,10 @@
+# ローカル用: コピーして .dev.vars にする（git には入れない）
+# TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+# ADMIN_TOKEN=change-me
+# IP_SALT=any-random-string
+
+# /plan（作戦プランナー）を動かす場合。
+# DISCORD_CLIENT_ID は公開値なので wrangler.toml の [vars] にあり、ここには不要。
+# SESSION_SECRET はセッション Cookie の署名鍵（ローカルでは任意のランダム文字列でよい）。
+# DISCORD_CLIENT_SECRET=...
+# SESSION_SECRET=any-random-string
