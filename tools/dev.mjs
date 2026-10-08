@@ -28,7 +28,7 @@ const PAGES_INSPECTOR_PORT = 9788;
 
 // wrangler は起動中の Worker をこの表に登録し、`script_name` をここから解決する。
 // 既定（~/.config/.wrangler/registry）は機械ごとに1つしかないので、
-// テスト（.wrangler/registry-vitest / registry-e2e）と混ざらないように分ける。
+// テスト（.wrangler/registry-vitest-plan / registry-e2e）と混ざらないように分ける。
 const REGISTRY = join(ROOT, ".wrangler", "registry-dev");
 
 // inspector（devtools）のポートは `--port` を変えても既定 9229 のままで衝突するので、
