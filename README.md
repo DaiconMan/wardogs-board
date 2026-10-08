@@ -296,8 +296,12 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth のトークン交換 | ログインできない |
 | `SESSION_SECRET` | セッション Cookie の署名鍵（HMAC-SHA256）。**任意のランダム文字列**でよい | ログインできない |
-| `ADMIN_TOKEN` | 議論欄の投稿削除に使っていたもの。**いまこれを読むコードは無い** | 影響なし（読むコードが無い） |
 | `BLOCKED_WORDS` | 作戦のタイトル・配置の注記・地名の NG ワード（カンマ区切り、任意） | 無効 |
+
+**入れるのはこの2つだけです。** かつては議論欄のための secret（投稿削除の
+`ADMIN_TOKEN` と人間確認の鍵2つ）もありましたが、議論欄を畳んで読むコードが
+1行も無くなったので削除しました。**消えたのは議論欄のものだけで、ログインの
+経路は無傷です。**
 
 **セッションの表は D1 に持ちません。** HMAC-SHA256 で署名した Cookie だけで
 状態を持っています（`functions/_lib/session.js`）。

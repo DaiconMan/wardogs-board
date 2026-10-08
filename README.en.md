@@ -299,8 +299,12 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | the OAuth token exchange | nobody can sign in |
 | `SESSION_SECRET` | signing the session cookie (HMAC-SHA256). **Any random string** will do | nobody can sign in |
-| `ADMIN_TOKEN` | used to delete posts in the retired comment threads. **No code reads it anymore** | no effect (nothing reads it) |
 | `BLOCKED_WORDS` | comma-separated word filter for plan titles, placement notes and callouts (optional) | disabled |
+
+**These two are the only ones you need.** There used to be secrets for the comment
+threads as well (`ADMIN_TOKEN` for deleting posts, plus two keys for the human
+check), but the threads were retired and no code reads them any more, so they were
+deleted. **Only the comment-thread keys went away; the sign-in path is untouched.**
 
 **There is no session table in D1.** All of the state is carried by a cookie signed
 with HMAC-SHA256 (`functions/_lib/session.js`).

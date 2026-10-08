@@ -289,8 +289,11 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth 的 token 交换 | 谁都登不进来 |
 | `SESSION_SECRET` | 会话 Cookie 的签名密钥（HMAC-SHA256）。**随便一串随机字符**即可 | 谁都登不进来 |
-| `ADMIN_TOKEN` | 以前用来删留言区帖子的。**现在没有代码会读它了** | 没影响（没有代码读它） |
 | `BLOCKED_WORDS` | 方案标题、放置备注、地名的屏蔽词（逗号分隔，可选） | 不启用 |
+
+**要填的只有这两个。** 以前还有留言区用的 secret（删帖用的 `ADMIN_TOKEN`，
+以及人机校验用的两个密钥），但留言区已经撤掉、没有一行代码会去读它们，所以都删了。
+**消失的只有留言区那几个，登录这条路没有受到影响。**
 
 **D1 里没有会话表。** 全部状态都由一枚 HMAC-SHA256 签名的 Cookie 携带
 （`functions/_lib/session.js`）。

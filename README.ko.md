@@ -300,8 +300,11 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth 토큰 교환 | 아무도 로그인할 수 없습니다 |
 | `SESSION_SECRET` | 세션 Cookie의 서명 키(HMAC-SHA256). **아무 랜덤 문자열**이면 됩니다 | 아무도 로그인할 수 없습니다 |
-| `ADMIN_TOKEN` | 예전 댓글란의 글 삭제에 쓰던 것. **이제 이걸 읽는 코드가 없습니다** | 영향 없음(읽는 코드가 없음) |
 | `BLOCKED_WORDS` | 작전 제목·배치 메모·지명의 금지어(쉼표 구분, 선택) | 비활성 |
+
+**넣을 것은 이 둘뿐입니다.** 예전에는 댓글란용 secret(글 삭제용 `ADMIN_TOKEN`과
+사람 확인용 키 2개)도 있었지만, 댓글란을 접으면서 읽는 코드가 한 줄도 남지 않아
+삭제했습니다. **사라진 것은 댓글란 쪽뿐이고 로그인 경로는 그대로입니다.**
 
 **D1에 세션 테이블은 없습니다.** 모든 상태를 HMAC-SHA256으로 서명한 Cookie
 하나가 들고 있습니다(`functions/_lib/session.js`).
