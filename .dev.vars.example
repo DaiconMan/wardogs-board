@@ -1,10 +1,14 @@
 # ローカル用: コピーして .dev.vars にする（git には入れない）
-# TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+#
+# ADMIN_TOKEN は議論欄の投稿削除に使っていたもの。議論欄を畳んだので、
+# いまこれを読むコードは無い（本番の Pages secret は残してある）。
 # ADMIN_TOKEN=change-me
-# IP_SALT=any-random-string
 
 # /plan（作戦プランナー）を動かす場合。
 # DISCORD_CLIENT_ID は公開値なので wrangler.toml の [vars] にあり、ここには不要。
 # SESSION_SECRET はセッション Cookie の署名鍵（ローカルでは任意のランダム文字列でよい）。
 # DISCORD_CLIENT_SECRET=...
 # SESSION_SECRET=any-random-string
+
+# 投稿を弾く語のカンマ区切り（作戦のタイトル・配置の注記・地名に効く）。未設定なら無効。
+# BLOCKED_WORDS=禁止語,badword

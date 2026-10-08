@@ -133,7 +133,6 @@ functions/api/auth/         discord/start·discord/callback·logout
 functions/api/me/           /api/me(로그인 상태·게스트 이름·방문 이력)
 functions/api/catalog.js    건조물 카탈로그
 functions/api/maps/         지도 목록 / {id}/zone-presets(GET/POST/PATCH/DELETE)
-functions/api/comments.js   장별 익명 댓글(아래 "남겨 둔 것" 참고)
 
 workers/room/               공유 커서를 중계하는 Durable Object용, Pages와는 별개인 Worker
   src/index.js                PlanRoom 본체(접속 관리, 커서 중계)
@@ -301,10 +300,8 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth 토큰 교환 | 아무도 로그인할 수 없습니다 |
 | `SESSION_SECRET` | 세션 Cookie의 서명 키(HMAC-SHA256). **아무 랜덤 문자열**이면 됩니다 | 아무도 로그인할 수 없습니다 |
-| `ADMIN_TOKEN` | 댓글 삭제(선택) | 삭제 버튼이 나오지 않습니다 |
-| `TURNSTILE_SECRET` | 댓글의 사람 확인(선택) | 사람 확인 없이 동작합니다(IP당 10분 5건 제한만) |
-| `IP_SALT` | 댓글 IP 해시의 소금(선택) | 기본값을 씁니다 |
-| `BLOCKED_WORDS` | 댓글의 금지어(쉼표 구분, 선택) | 비활성 |
+| `ADMIN_TOKEN` | 예전 댓글란의 글 삭제에 쓰던 것. **이제 이걸 읽는 코드가 없습니다** | 영향 없음(읽는 코드가 없음) |
+| `BLOCKED_WORDS` | 작전 제목·배치 메모·지명의 금지어(쉼표 구분, 선택) | 비활성 |
 
 **D1에 세션 테이블은 없습니다.** 모든 상태를 HMAC-SHA256으로 서명한 Cookie
 하나가 들고 있습니다(`functions/_lib/session.js`).
@@ -384,15 +381,10 @@ npm run shots   # 눈으로 확인하는 스크린샷을 shots/에 다시 생성
 
 **`npm test`가 전부 통합 테스트는 아닙니다.** `plan-coords` / `plan-ink-codec` /
 `plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
-`en-headers` / `no-account-identifiers`는 서버를 띄우지 않고 동작합니다.
+`en-headers` / `no-account-identifiers` / `no-comments-api`는 서버를 띄우지 않고 동작합니다.
 
 **둘 다 로컬의 `wrangler pages dev` / `wrangler dev`만 상대합니다.**
-밖으로 나가는 통신은 두 가지뿐입니다.
-
-- `npm ci`와 `npx playwright install`의 다운로드
-- Turnstile 테스트가 `challenges.cloudflare.com`으로 POST 하는 것
-  (Cloudflare 공식 테스트 키. `1x00000000000000000000AA`는 항상 성공,
-  `2x0000000000000000000000000000000AA`는 항상 실패)
+밖으로 나가는 통신은 `npm ci`와 `npx playwright install`의 다운로드뿐입니다.
 
 **지도 이미지가 없어도 테스트는 전부 통과합니다.** 배경을 다루는 테스트는
 `#basemap`의 `href` 속성을 보고, `**/map/**`을 전부 떨어뜨렸을 때 보드가 멀쩡한지를
@@ -409,12 +401,14 @@ npm run shots   # 눈으로 확인하는 스크린샷을 shots/에 다시 생성
 
 | 용도 | 포트 | inspector | persist-to |
 |---|---|---|---|
-| vitest(댓글, 설정 4종) | 8811-8814 | 9311-9314 | `.wrangler/test-state` |
 | vitest(/plan) | 8831 | 9331 | `.wrangler/plan-state` |
 | e2e(/plan) | 8832 | 9332 | `.wrangler/e2e-plan-state` |
 | e2e(room / Durable Object) | 8833 | 9333 | `.wrangler/e2e-room-state` |
 | `npm run dev`(room) | 8787 | 9787 | `.wrangler/dev-room-state` |
 | `npm run dev`(pages) | 8788 | 9788 | `.wrangler/dev-pages-state` |
+
+vitest에는 `globalSetup`이 없습니다. 서버가 필요한 파일이 `beforeAll`에서
+스스로 띄우고 스스로 멈춥니다.
 
 **`WRANGLER_REGISTRY_PATH`도 나눕니다.** wrangler는 돌고 있는 Worker를
 **기계당 하나뿐인 레지스트리**(기본 `~/.config/.wrangler/registry`)에 등록하고,
@@ -485,24 +479,28 @@ node tools/do-usage.mjs --minutes 10
 
 ---
 
-## 남겨 둔 것(댓글란)
+## 남겨 둔 것(`comments` 테이블)
 
 이 프로젝트의 출발점은 **장마다 익명 댓글란이 붙은 정적 페이지**였고,
-이름(`wardogs-board`)에 남아 있는 것은 그쪽입니다. 지금은 `/`가 `/plan`으로 302
-하지만(`public/_redirects`), 댓글 API(`/api/comments`)와 테이블은 그대로 있습니다.
+이름(`wardogs-board`)에 남아 있는 것은 그쪽입니다. 지금은 `/`가 `/plan`으로
+302 하며(`public/_redirects`), **댓글 API도 함께 접었습니다.**
 
-**UI는 이제 어느 페이지에도 없습니다.** `/`의 배포를 멈출 때 함께 사라졌으므로
-**남아 있는 것은 서버 쪽뿐**입니다(API를 직접 호출하는 형태가 됩니다).
-쓰려면 어딘가의 페이지에 작성 폼과 Turnstile 위젯을 직접 넣어 주세요.
+UI가 사라진 뒤에도 서버만 계속 사람 확인 토큰을 요구하고 있어서,
+**위젯은 없는데 토큰은 요구하는** 상태 — 즉 글을 올릴 경로가 구조적으로
+존재하지 않는 상태였습니다. 그래서 API까지 함께 접었습니다.
 
-- 장은 11개(`functions/api/comments.js`의 `SECTIONS`). 추가하려면 여기에 id를 넣습니다
-- 제한값: 같은 파일 맨 앞의 상수(본문 1000자, 이름 24자, IP당 10분 5건,
-  목록은 한 번에 2000건, 본문의 URL은 2개까지)
-- 사람 확인: Cloudflare Turnstile. **`TURNSTILE_SECRET`을 설정하면 `POST`가
-  토큰을 요구합니다.** 위젯이 없는 상태로 설정하면 작성이 전부 403이 됩니다
-  (사이트 키 삽입과 시크릿 등록은 함께). 설정하지 않으면 사람 확인 없이 동작합니다
-- 삭제: `DELETE /api/comments?id=<글 ID>`에 `Authorization: Bearer <ADMIN_TOKEN>`
-- IP는 **해시**해서 저장합니다(`IP_SALT`를 붙여서). 원본 IP는 저장하지 않습니다
+**D1의 `comments` 테이블과 그 안의 행은 그대로 남아 있습니다.** 읽고 쓰는 경로가
+없을 뿐, 지난 발언은 지워지지 않았습니다. `schema.sql`에서 빼면 스키마를 새로
+흘리는 환경에서는 "없었던 일"이 되므로 테이블 정의는 그대로 두었습니다.
+지난 글들은 IP를 **해시**해서 저장했었지만(`IP_SALT` 사용), 지금은 새로 해시할
+코드 자체가 없습니다(이미 저장된 행을 설명하기 위해 남겨 둔 한 줄입니다).
+
+되살린다면 `comments` 테이블은 그대로 쓸 수 있습니다. 다만 API와 UI와
+사람 확인을 **한꺼번에** 다시 만들어야 합니다.
+
+`tests/no-comments-api.test.js`가 이 모양을 지키고 있습니다
+(댓글 API가 없는지, 사람 확인 위젯에 대한 참조가 없는지, `comments` 테이블은
+남아 있는지).
 
 ---
 

@@ -27,7 +27,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
 
-  // wrangler pages dev の初回リクエストと Turnstile ウィジェットの描画に時間がかかる
+  // wrangler pages dev の初回リクエスト（Functions のビルド）とマップ画像の読み込みに
+  // 時間がかかる
   timeout: 60_000,
   expect: { timeout: 15_000 },
 

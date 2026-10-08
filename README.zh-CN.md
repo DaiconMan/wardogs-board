@@ -126,7 +126,6 @@ functions/api/auth/         discord/start・discord/callback・logout
 functions/api/me/           /api/me（登录状态・访客名字・访问记录）
 functions/api/catalog.js    建筑目录
 functions/api/maps/         地图列表／{id}/zone-presets（GET/POST/PATCH/DELETE）
-functions/api/comments.js   按章节的匿名留言（见"保留下来的部分"）
 
 workers/room/               中继共享光标的 Durable Object 专用 Worker（与 Pages 分开）
   src/index.js                PlanRoom 本体（在场管理、光标中继）
@@ -290,10 +289,8 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth 的 token 交换 | 谁都登不进来 |
 | `SESSION_SECRET` | 会话 Cookie 的签名密钥（HMAC-SHA256）。**随便一串随机字符**即可 | 谁都登不进来 |
-| `ADMIN_TOKEN` | 删留言（可选） | 删除入口不出现 |
-| `TURNSTILE_SECRET` | 留言的人机校验（可选） | 不做人机校验也能用（只有每 IP 每 10 分钟 5 条的限制） |
-| `IP_SALT` | 留言 IP 哈希的盐（可选） | 用默认值 |
-| `BLOCKED_WORDS` | 留言的屏蔽词（逗号分隔，可选） | 不启用 |
+| `ADMIN_TOKEN` | 以前用来删留言区帖子的。**现在没有代码会读它了** | 没影响（没有代码读它） |
+| `BLOCKED_WORDS` | 方案标题、放置备注、地名的屏蔽词（逗号分隔，可选） | 不启用 |
 
 **D1 里没有会话表。** 全部状态都由一枚 HMAC-SHA256 签名的 Cookie 携带
 （`functions/_lib/session.js`）。
@@ -370,14 +367,10 @@ npm run shots   # 把肉眼确认用的截图重新生成到 shots/（不进 git
 
 **`npm test` 并不全是集成测试。** `plan-coords` / `plan-ink-codec` /
 `plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
-`en-headers` / `no-account-identifiers` 都不用起服务器就能跑。
+`en-headers` / `no-account-identifiers` / `no-comments-api` 都不用起服务器就能跑。
 
-**两者都只打本地的 `wrangler pages dev` / `wrangler dev`。** 出网的只有两件事：
-
-- `npm ci` 和 `npx playwright install` 的下载
-- Turnstile 那个测试会往 `challenges.cloudflare.com` 发 POST，
-  用的是 Cloudflare 官方的测试密钥（`1x00000000000000000000AA` 恒成功，
-  `2x0000000000000000000000000000000AA` 恒失败）
+**两者都只打本地的 `wrangler pages dev` / `wrangler dev`。** 出网的只有
+`npm ci` 和 `npx playwright install` 的下载。
 
 **没有地图图片，整套测试也全过。** 涉及背景的测试看的是 `#basemap` 的 `href` 属性，
 以及"把 `**/map/**` 全部中断掉，棋盘是否照常"——也就是**属性和失败时的行为**。
@@ -393,12 +386,14 @@ npm run shots   # 把肉眼确认用的截图重新生成到 shots/（不进 git
 
 | 用途 | 端口 | inspector | persist-to |
 |---|---|---|---|
-| vitest（留言，4 种配置） | 8811-8814 | 9311-9314 | `.wrangler/test-state` |
 | vitest（/plan） | 8831 | 9331 | `.wrangler/plan-state` |
 | e2e（/plan） | 8832 | 9332 | `.wrangler/e2e-plan-state` |
 | e2e（room / Durable Object） | 8833 | 9333 | `.wrangler/e2e-room-state` |
 | `npm run dev`（room） | 8787 | 9787 | `.wrangler/dev-room-state` |
 | `npm run dev`（pages） | 8788 | 9788 | `.wrangler/dev-pages-state` |
+
+vitest 没有 `globalSetup`。需要服务器的文件会在 `beforeAll` 里自己起、
+自己停。
 
 **`WRANGLER_REGISTRY_PATH` 也要分开。** wrangler 会把正在运行的 Worker 登记到
 一个**每台机器只有一份**的注册表里（默认 `~/.config/.wrangler/registry`），
@@ -466,23 +461,26 @@ node tools/do-usage.mjs --minutes 10
 
 ---
 
-## 保留下来的部分（留言区）
+## 保留下来的部分（`comments` 表）
 
 这个项目最初是**每一章下面带匿名留言区的静态页面**，名字 `wardogs-board` 就是从那儿来的。
 现在 `/` 会 302 到 `/plan`（`public/_redirects`），
-但留言的 API（`/api/comments`）和相应的表都还在。
+**留言的 API 也一并收掉了。**
 
-**界面已经不在任何页面上了。** 它随着 `/` 一起没了，**留下的只有服务端**
-（要用就得直接打 API）。想用的话，请自己在某个页面上加投稿表单和 Turnstile 控件。
+界面消失之后，服务端还一直要求人机校验的 token —— 控件没了，token 却还在要，
+也就是说投稿已经没有任何结构上能走通的路径了。所以干脆把 API 也一起收掉。
 
-- 章节 11 个（`functions/api/comments.js` 里的 `SECTIONS`）。要加就往那里放 id
-- 限制值：同一文件开头的常量（正文 1000 字、名字 24 字、每 IP 每 10 分钟 5 条、
-  列表一次最多 2000 条、正文里的 URL 最多 2 个）
-- 人机校验：Cloudflare Turnstile。**设了 `TURNSTILE_SECRET`，`POST` 就会要求 token**，
-  所以在没有控件的情况下设置它，等于让所有投稿都变成 403
-  （嵌入 site key 和登记 secret 要一起做）。没设就不做校验照常跑
-- 删除：`DELETE /api/comments?id=<帖子 ID>`，带 `Authorization: Bearer <ADMIN_TOKEN>`
-- IP 以**哈希**保存（带 `IP_SALT`）。原始 IP 不入库
+**D1 里的 `comments` 表和里面的行都还留着。** 只是没有读写它们的路径了，
+以前的发言并没有被删除。如果把它从 `schema.sql` 里拿掉，下一个从头跑一遍
+schema 的环境里它就"从没存在过"，所以表的定义保留了下来。
+以前的帖子把 IP **哈希**后保存（带 `IP_SALT`），但现在已经没有代码会去哈希新的
+IP 了——这句话只是在说明已经存在的那些行。
+
+如果以后要恢复，`comments` 表可以直接拿来用，但 API、界面和人机校验
+需要**一起**重新做。
+
+`tests/no-comments-api.test.js` 盯着这个形状：没有留言 API、没有任何对
+人机校验控件的引用、`comments` 表仍然存在。
 
 ---
 

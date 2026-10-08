@@ -134,7 +134,6 @@ functions/api/auth/         discord/start, discord/callback, logout
 functions/api/me/           /api/me (login state, guest name, visit history)
 functions/api/catalog.js    the structure catalogue
 functions/api/maps/         map list / {id}/zone-presets (GET/POST/PATCH/DELETE)
-functions/api/comments.js   per-chapter anonymous comments (see "What is still here")
 
 workers/room/               a separate Worker (not Pages) for the cursor-relay Durable Object
   src/index.js                PlanRoom itself (presence, cursor relay)
@@ -300,10 +299,8 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | the OAuth token exchange | nobody can sign in |
 | `SESSION_SECRET` | signing the session cookie (HMAC-SHA256). **Any random string** will do | nobody can sign in |
-| `ADMIN_TOKEN` | deleting comments (optional) | the delete controls never appear |
-| `TURNSTILE_SECRET` | the human check on comments (optional) | comments work with no human check (only 5 per IP per 10 minutes) |
-| `IP_SALT` | salt for the comment IP hash (optional) | a default is used |
-| `BLOCKED_WORDS` | comma-separated word filter for comments (optional) | disabled |
+| `ADMIN_TOKEN` | used to delete posts in the retired comment threads. **No code reads it anymore** | no effect (nothing reads it) |
+| `BLOCKED_WORDS` | comma-separated word filter for plan titles, placement notes and callouts (optional) | disabled |
 
 **There is no session table in D1.** All of the state is carried by a cookie signed
 with HMAC-SHA256 (`functions/_lib/session.js`).
@@ -380,15 +377,11 @@ npm run shots   # regenerates the eyeball-check screenshots into shots/ (not in 
 
 **`npm test` is not all integration tests.** `plan-coords`, `plan-ink-codec`,
 `plan-zones-geom`, `plan-cursor-budget`, `room-cursors`, `room-presence`,
-`en-headers` and `no-account-identifiers` run without starting a server.
+`en-headers`, `no-account-identifiers` and `no-comments-api` run without starting a server.
 
-**Both of them talk only to a local `wrangler pages dev` / `wrangler dev`.** Exactly two
-things reach the network:
-
-- downloads for `npm ci` and `npx playwright install`
-- the Turnstile test POSTing to `challenges.cloudflare.com` with Cloudflare's official
-  test keys (`1x00000000000000000000AA` always passes,
-  `2x0000000000000000000000000000000AA` always fails)
+**Both of them talk only to a local `wrangler pages dev` / `wrangler dev`.** The only
+things that reach the network are the downloads for `npm ci` and
+`npx playwright install`.
 
 **The whole suite passes with no map imagery.** The tests that concern the background
 check the `href` attribute on `#basemap`, and check that aborting every `**/map/**`
@@ -406,12 +399,14 @@ If you start more than one `wrangler pages dev`, give each instance its own
 
 | Purpose | port | inspector | persist-to |
 |---|---|---|---|
-| vitest (comments; 4 configurations) | 8811-8814 | 9311-9314 | `.wrangler/test-state` |
 | vitest (/plan) | 8831 | 9331 | `.wrangler/plan-state` |
 | e2e (/plan) | 8832 | 9332 | `.wrangler/e2e-plan-state` |
 | e2e (room / Durable Object) | 8833 | 9333 | `.wrangler/e2e-room-state` |
 | `npm run dev` (room) | 8787 | 9787 | `.wrangler/dev-room-state` |
 | `npm run dev` (pages) | 8788 | 9788 | `.wrangler/dev-pages-state` |
+
+vitest has no `globalSetup`. Files that need a server start one themselves
+in `beforeAll` and stop it themselves.
 
 **`WRANGLER_REGISTRY_PATH` needs separating too.** wrangler registers running Workers in
 a registry there is only **one of per machine** (`~/.config/.wrangler/registry` by
@@ -484,25 +479,28 @@ node tools/do-usage.mjs --minutes 10
 
 ---
 
-## What is still here (the comment threads)
+## What is still here (the `comments` table)
 
 This project started life as **a static page with an anonymous comment thread under each
 chapter**, which is where the name `wardogs-board` comes from. `/` now 302s to `/plan`
-(`public/_redirects`), but the comment API (`/api/comments`) and its tables are still in
-place.
+(`public/_redirects`), and **the comment API has been retired too.**
 
-**There is no UI left for it.** It went away with `/`, so **only the server side
-remains** — you reach it by calling the API directly. To use it, add a post form and
-a Turnstile widget to a page yourself.
+Even after the UI disappeared, the server kept requiring a human-check token — the
+widget was gone but the token was still demanded, so there was no longer any path by
+which a post could actually reach the API. That is why the API itself was removed.
 
-- 11 chapters (`SECTIONS` in `functions/api/comments.js`). Add an id there for a new one
-- Limits: the constants at the top of the same file (1,000 characters of body, 24 of
-  name, 5 posts per IP per 10 minutes, 2,000 rows per listing, at most 2 URLs in a body)
-- Human check: Cloudflare Turnstile. **Setting `TURNSTILE_SECRET` makes `POST` require
-  a token**, so setting it while no widget exists turns every post into a 403
-  (embed the site key and register the secret together). With no secret it runs without one
-- Deleting: `DELETE /api/comments?id=<id>` with `Authorization: Bearer <ADMIN_TOKEN>`
-- IP addresses are stored **hashed** (with `IP_SALT`). The raw address is never stored
+**The `comments` table and its rows are still in D1.** There is simply no path left to
+read or write them; past posts have not been deleted. Dropping the table from
+`schema.sql` would make it vanish from any environment that applies the schema from
+scratch, so the table definition stays. Past posts had their IP address stored
+**hashed** (with `IP_SALT`); nothing hashes new IPs anymore, since nothing stores new
+IPs — this note only describes the rows already on disk.
+
+If this ever comes back, the `comments` table can be reused as is, but the API, the UI
+and the human check would all need to be rebuilt **together**.
+
+`tests/no-comments-api.test.js` watches for this shape: no comment API, no reference to
+a human-check widget anywhere, and the `comments` table still present.
 
 ---
 

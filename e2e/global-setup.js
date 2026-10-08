@@ -1,6 +1,6 @@
 // Playwright globalSetup: テスト用の `wrangler pages dev` を起動し、終了時に確実に止める。
 //
-// tests/global-setup.js（vitest 用）と同じ実測メモが当てはまる:
+// 実測メモ（vitest 側の tests/plan-helpers.js にも同じことが書いてある）:
 //   * `--port` を変えても inspector は 9229 固定で衝突するため `--inspector-port` も分ける。
 //   * 同じ D1 persist ディレクトリを共有すると SQLite のロック競合で `D1_ERROR` → 500 になるため
 //     `--persist-to` を分ける。
@@ -10,10 +10,10 @@
 // 起動するのは 2 つ（**Durable Object のために2プロセスになった**）。
 //   room … workers/room（class PlanRoom）。`wrangler dev` で立てる。
 //          Pages プロジェクトの中に Durable Object を定義できないので別 Worker。
-//   plan … /plan のテスト用。Turnstile を使わないので public/ をそのまま配信し、
-//          代わりに Discord ログイン（mock）用のバインディングを渡す。
-//          wrangler.toml の ROOM バインディング（script_name = "wardogs-room"）が
-//          上の room を指す。**room を先に起動する。**
+//   plan … /plan のテスト用。public/ をそのまま配信し、Discord ログイン（mock）用の
+//          バインディングを渡す。wrangler.toml の ROOM バインディング
+//          （script_name = "wardogs-room"）が上の room を指す。
+//          **room を先に起動する。**
 // `/` の作戦ノートは配信を止めた（public/_redirects で /plan にリダイレクト）ため、
 // ノート専用の e2e サーバ（旧 main / port 8821）は廃止した。
 import { spawn, spawnSync } from "node:child_process";

@@ -1,12 +1,11 @@
 // Playwright（UIテスト）用のサーバ構成。global-setup とテスト本体の両方が読む。
 //
-// vitest 側（tests/config.js）と「絶対に」重ならない値にしてある。理由は tests/config.js の
-// コメントのとおりで、実測した 2 つの制約がある:
+// vitest 側（tests/plan-helpers.js）と「絶対に」重ならない値にしてある。実測した
+// 2 つの制約があるため:
 //   * `wrangler pages dev` の inspector は `--port` を変えても 9229 固定で衝突するため、
 //     インスタンスごとに `--inspector-port` を分ける必要がある。
 //   * 複数インスタンスが同じ D1 persist ディレクトリを共有すると SQLite のロック競合で
 //     `D1_ERROR` → 500 になるため、`--persist-to` も分ける必要がある。
-// vitest      : port 8811-8814 / inspector 9311-9314 / .wrangler/test-state
 // vitest(/plan): port 8831      / inspector 9331      / .wrangler/plan-state
 // e2e(/plan)  : port 8832      / inspector 9332      / .wrangler/e2e-plan-state
 // e2e(room)   : port 8833      / inspector 9333      / .wrangler/e2e-room-state
@@ -14,10 +13,11 @@
 //
 // `/` の作戦ノートは配信を止めた（public/_redirects で /plan にリダイレクト）ため、
 // ノート専用の e2e サーバ（旧 port 8821 / inspector 9321 / .wrangler/e2e-state）は
-// 廃止した。残るのは /plan（ホワイトボード）と room（Durable Object）の2本。
+// 廃止した。議論欄の API を畳んだときに、vitest 側の 8811-8814 の4本も消えた。
+// 残るのは /plan（ホワイトボード）と room（Durable Object）の2本。
 
-// /plan 用のインスタンス。Turnstile を使わず Discord ログインで認証するので、
-// public/ をそのまま配信する。Discord 関連のバインディングが要るのもこちらだけ。
+// /plan 用のインスタンス。認証は Discord ログインなので public/ をそのまま配信する。
+// Discord 関連のバインディングが要るのもこちらだけ。
 export const PLAN_PORT = 8832;
 export const PLAN_INSPECTOR_PORT = 9332;
 export const PLAN_PERSIST = ".wrangler/e2e-plan-state";
@@ -47,7 +47,8 @@ export const PLAN_BINDINGS = {
   DISCORD_CLIENT_SECRET: "e2e-client-secret",
   DISCORD_API_BASE: "mock",
   ALLOW_DEBUG: "1",
-  // 配置の注記が弾かれたときに、理由が画面に出ることを確かめるために要る。
+  // 配置の注記が弾かれたときに、理由が画面に出ることを確かめるために要る
+  // （`functions/_lib/validate.js` の `blockedBy`）。
   // vitest 側（tests/plan-helpers.js）と同じ語にしてある。
   BLOCKED_WORDS: "禁止語",
 };

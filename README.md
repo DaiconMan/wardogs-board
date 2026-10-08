@@ -128,7 +128,6 @@ functions/api/auth/         discord/start・discord/callback・logout
 functions/api/me/           /api/me（ログイン状態・ゲスト名・訪問履歴）
 functions/api/catalog.js    建造物カタログ
 functions/api/maps/         マップ一覧／{id}/zone-presets（GET/POST/PATCH/DELETE）
-functions/api/comments.js   章ごとの匿名コメント欄（下の「残してあるもの」）
 
 workers/room/               共有カーソルを中継する Durable Object 用の、Pages とは別の Worker
   src/index.js                PlanRoom 本体（在室管理・カーソル中継）
@@ -297,10 +296,8 @@ npx wrangler pages secret put SESSION_SECRET        --project-name wardogs-board
 |---|---|---|
 | `DISCORD_CLIENT_SECRET` | OAuth のトークン交換 | ログインできない |
 | `SESSION_SECRET` | セッション Cookie の署名鍵（HMAC-SHA256）。**任意のランダム文字列**でよい | ログインできない |
-| `ADMIN_TOKEN` | コメント欄の削除（任意） | 削除機能が出ない |
-| `TURNSTILE_SECRET` | コメント欄の人間確認（任意） | 人間確認なしで動く（IPごと10分5件の制限のみ） |
-| `IP_SALT` | コメント欄の IP ハッシュの塩（任意） | 既定値が使われる |
-| `BLOCKED_WORDS` | コメント欄の NG ワード（カンマ区切り、任意） | 無効 |
+| `ADMIN_TOKEN` | 議論欄の投稿削除に使っていたもの。**いまこれを読むコードは無い** | 影響なし（読むコードが無い） |
+| `BLOCKED_WORDS` | 作戦のタイトル・配置の注記・地名の NG ワード（カンマ区切り、任意） | 無効 |
 
 **セッションの表は D1 に持ちません。** HMAC-SHA256 で署名した Cookie だけで
 状態を持っています（`functions/_lib/session.js`）。
@@ -379,15 +376,10 @@ npm run shots   # 目視確認用のスクリーンショットを shots/ に再
 
 **`npm test` は全部が統合テストではありません。** `plan-coords` / `plan-ink-codec` /
 `plan-zones-geom` / `plan-cursor-budget` / `room-cursors` / `room-presence` /
-`en-headers` / `no-account-identifiers` はサーバを立てずに動く単体テストです。
+`en-headers` / `no-account-identifiers` / `no-comments-api` はサーバを立てずに動く単体テストです。
 
 **どちらもローカルの `wrangler pages dev` / `wrangler dev` を相手にします。**
-外に出る通信は2つだけです。
-
-- `npm ci` と `npx playwright install` のダウンロード
-- Turnstile のテストが `challenges.cloudflare.com` へ POST する
-  （Cloudflare 公式のテスト用キー。`1x00000000000000000000AA` は常に成功、
-  `2x0000000000000000000000000000000AA` は常に失敗）
+外に出る通信は `npm ci` と `npx playwright install` のダウンロードだけです。
 
 **マップ画像が無くてもテストは全部通ります。** 画像に触るテストは
 「`#basemap` の `href` 属性が `/map/overview/<map>.webp` になっているか」
@@ -404,12 +396,14 @@ npm run shots   # 目視確認用のスクリーンショットを shots/ に再
 
 | 用途 | ポート | inspector | persist-to |
 |---|---|---|---|
-| vitest（コメント欄、設定別に4つ） | 8811-8814 | 9311-9314 | `.wrangler/test-state` |
 | vitest（/plan） | 8831 | 9331 | `.wrangler/plan-state` |
 | e2e（/plan） | 8832 | 9332 | `.wrangler/e2e-plan-state` |
 | e2e（room / Durable Object） | 8833 | 9333 | `.wrangler/e2e-room-state` |
 | `npm run dev`（room） | 8787 | 9787 | `.wrangler/dev-room-state` |
 | `npm run dev`（pages） | 8788 | 9788 | `.wrangler/dev-pages-state` |
+
+vitest に `globalSetup` は無い。サーバが要るファイルが `beforeAll` で
+自分で立てて自分で止める。
 
 **`WRANGLER_REGISTRY_PATH` も分けます。** wrangler は起動中の Worker を
 **機械ごとに1つしかないレジストリ**（既定 `~/.config/.wrangler/registry`）に登録し、
@@ -479,25 +473,28 @@ node tools/do-usage.mjs --minutes 10
 
 ---
 
-## 残してあるもの（コメント欄）
+## 残してあるもの（`comments` テーブル）
 
 このプロジェクトの出発点は**章ごとに匿名コメント欄が付いた静的ページ**で、
 名前（`wardogs-board`）に残っているのはそれです。`/` の配信は止めて `/plan` へ
-302 で送っていますが（`public/_redirects`）、コメント欄の API（`/api/comments`）と
-テーブルはそのまま残してあります。
+302 で送っており（`public/_redirects`）、**議論欄の API も畳みました。**
 
-**UI はもうどのページにもありません。** `/` の配信を止めたときに一緒に無くなったので、
-**残っているのはサーバ側だけ**です（API を直接叩く形になります）。
-使うなら、どこかのページに投稿フォームと Turnstile のウィジェットを自分で足してください。
+UI が消えたあともサーバだけが人間確認のトークンを要求し続けていて、
+**ウィジェットが無いのにトークンを要求する**＝投稿する経路が構造的に
+存在しない状態になっていました。だから API ごと畳みました。
 
-- 章は11個（`functions/api/comments.js` の `SECTIONS`）。足すならここに id を入れる
-- 制限値: 同ファイル冒頭の定数（本文1000文字、名前24文字、IPごと10分5件、
-  一覧は1回2000件まで、本文に URL は2つまで）
-- 人間確認: Cloudflare Turnstile。**`TURNSTILE_SECRET` を設定すると `POST` は
-  トークンを要求します。** ウィジェットが無いまま設定すると、投稿が全部 403 になります
-  （サイトキーの埋め込みとシークレットの登録はセットで）。未設定なら人間確認なしで動く
-- 削除: `DELETE /api/comments?id=<投稿ID>` に `Authorization: Bearer <ADMIN_TOKEN>`
-- IP は**ハッシュ化**して保存します（`IP_SALT` 付き）。生の IP は保存しません
+**D1 の `comments` テーブルと行は残してあります。** 読み書きする経路が無いだけで、
+過去の発言は消えていません。`schema.sql` から外すと、次にスキーマを流した環境で
+「無かったこと」になるので、テーブル定義はそのまま残しています。
+過去の投稿は IP を**ハッシュ化**して保存していましたが、いまハッシュ化するコードは
+ありません（保存済みの行の説明として記録しているだけです）。
+
+戻すなら `comments` テーブルがそのまま使えます。ただし API と UI と人間確認を
+**まとめて**作り直すことになります。
+
+`tests/no-comments-api.test.js` がこの形を見張っています
+（議論欄の API が無いこと・人間確認への参照が無いこと・`comments` テーブルは
+残っていること）。
 
 ---
 
