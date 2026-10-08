@@ -289,7 +289,7 @@ describe("条件1: URL を知っている作戦を、ログイン無しで開け
 });
 
 describe("条件4: 書き込みが全部弾かれる（総当たり）", () => {
-  it("5経路すべて・全メソッドで 401（成功した経路が1つも無い）", async () => {
+  it("6経路すべて・全メソッドで 401（成功した経路が1つも無い）", async () => {
     const owner = await loginAs("7210", "guestwriteowner");
     const session = await newSession(owner.cookie, "ゲストが書けない作戦");
     const rows = await seedRows(owner.cookie, session.id);
