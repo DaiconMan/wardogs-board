@@ -8,7 +8,8 @@ import {
 } from "../callouts.js";
 import { say } from "../chrome.js";
 import { calloutLayer } from "../dom.js";
-import { DEFAULT_MODE, canEdit, state } from "../state.js";
+import { dropDone, record, recordReplay } from "../history.js";
+import { DEFAULT_MODE, canEdit, dropPicked, history, state } from "../state.js";
 import { clearZoneKind } from "./area.js";
 import { renderDetail } from "./detail.js";
 import { clearPick } from "./drawers.js";
@@ -71,8 +72,9 @@ export function removeCallout(c) {
   c.node?.remove();
   const i = state.callouts.indexOf(c);
   if (i !== -1) state.callouts.splice(i, 1);
-  const j = state.mine.findIndex((e) => e.callout === c);
-  if (j !== -1) state.mine.splice(j, 1);
+  dropDone(history(), (e) => e.callout === c);
+  // 範囲選択で選んでいた列からも外す（消えたものを掴み続けない）。
+  dropPicked(c);
   if (state.selectedCallout === c) selectCallout(null);
 }
 
@@ -117,22 +119,41 @@ export async function placeCalloutAt(point) {
     say("マップの外です。マップの上を押してください。");
     return;
   }
+
+  await addCallout({ name: state.coords.cellOf(at) ?? "地名", x_m: at.x_m, y_m: at.y_m });
+}
+
+/**
+ * 地名を1件作って保存する。**置く経路とやり直しの経路が共有する唯一の実体。**
+ *
+ * `replay` のときに変える所は2つ（配置の `addPlacement` と同じ作法）。
+ *   1. 呼び名の欄にフォーカスしない（やり直しは「書き始める」操作ではない）
+ *   2. 台帳に積むのに `recordReplay` を使う（やり直しの山を捨てない）
+ *
+ * 件数の上限と座標の確認は呼ぶ側の受け持ちにしない——**やり直しでも上限に当たる**
+ * （戻したあとに他の人が置いて埋まることがある）ので、ここで見る。
+ *
+ * 戻り値は作った地名、保存できなければ null。
+ */
+export async function addCallout(seed, { replay = false } = {}) {
   if (state.callouts.length >= MAX_CALLOUTS_PER_PLAN) {
-    say(
-      `地名は1つの作戦に${MAX_CALLOUTS_PER_PLAN}件までです。要らないものを消してください。`,
-      true
-    );
-    return;
+    if (!replay) {
+      say(
+        `地名は1つの作戦に${MAX_CALLOUTS_PER_PLAN}件までです。要らないものを消してください。`,
+        true
+      );
+    }
+    return null;
   }
 
-  const name = state.coords.cellOf(at) ?? "地名";
+  const { name } = seed;
   calloutUid += 1;
   const c = {
     uid: calloutUid,
     id: null,
     name,
-    x_m: at.x_m,
-    y_m: at.y_m,
+    x_m: seed.x_m,
+    y_m: seed.y_m,
     created_by: state.me.user.id,
   };
   state.callouts.push(c);
@@ -140,17 +161,21 @@ export async function placeCalloutAt(point) {
   selectCallout(c);
   // 置いた直後に打ち替えられるようにする。既定値は全選択しておく
   // （消してから打ち直させない）。
-  const input = document.getElementById("callout-name");
-  input?.focus();
-  input?.select();
+  if (!replay) {
+    const input = document.getElementById("callout-name");
+    input?.focus();
+    input?.select();
+  }
   // 取り消しの台帳に、線・配置と同じ列へ操作した順で載せる。
-  state.mine.push({ callout: c });
+  const entry = { callout: c };
+  if (replay) recordReplay(history(), entry);
+  else record(history(), entry);
 
   c.saving = postCallouts(state.plan.session.id, [{
     client_uuid: crypto.randomUUID(),
     name,
-    x_m: at.x_m,
-    y_m: at.y_m,
+    x_m: seed.x_m,
+    y_m: seed.y_m,
   }]).then((res) => {
     c.id = res.ids[0];
     if (c.node) c.node.dataset.calloutId = String(res.ids[0]);
@@ -159,26 +184,32 @@ export async function placeCalloutAt(point) {
 
   try {
     await c.saving;
-    say(`地名「${name}」を置きました。呼び名を書き換えられます。`);
+    if (!replay) say(`地名「${name}」を置きました。呼び名を書き換えられます。`);
+    return c;
   } catch (e) {
     removeCallout(c);
-    say(`地名を置けませんでした。${e.message}`, true);
+    if (!replay) say(`地名を置けませんでした。${e.message}`, true);
+    return null;
   }
 }
 
-/** 直前に置いた地名を取り消す（配置の取り消しとまったく同じ流れ）。 */
+/**
+ * 直前に置いた地名を取り消す（配置の取り消しとまったく同じ流れ）。
+ * **戻せたら true。** 台帳の出し入れは呼ぶ側（board/history.js）がする。
+ */
 export async function undoCallout(entry) {
   const c = entry.callout;
   const id = await calloutId(c);
-  if (id === null) { say("取り消しました。"); return; }
+  if (id === null) { say("取り消しました。"); return true; }
 
   try {
     await deleteCallout(state.plan.session.id, id);
     removeCallout(c);
     say("取り消しました。");
+    return true;
   } catch (e) {
-    state.mine.push(entry);
     say(`取り消せませんでした。${e.message}`, true);
+    return false;
   }
 }
 

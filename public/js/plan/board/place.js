@@ -2,15 +2,18 @@
 //
 // 描き方そのもの（マーカー・射程リング・ホットゾーンの円）は ../placements.js。
 
-import { deletePlacement, getCatalog, getPlacements, postPlacements } from "../api.js";
+import {
+  deletePlacement, getCatalog, getPlacements, patchPlacement, postPlacements,
+} from "../api.js";
 import { say } from "../chrome.js";
 import { hotzoneLayer, placeLayer, rangeLayer } from "../dom.js";
+import { dropDone, record, recordReplay } from "../history.js";
 import {
   FOB_RANGE_NOTE, HOTZONE_ITEM_ID, createHotzone, createMarker, createRange, hasRange,
   hotzoneNote, isFob, isHotzone, rangeText, setHotzoneLabelScale, setMarkerLabel,
   setMarkerRank, setMarkerTransform, wantsNote,
 } from "../placements.js";
-import { canEdit, state } from "../state.js";
+import { canEdit, dropPicked, history, state } from "../state.js";
 import { renderDetail } from "./detail.js";
 import { buildPalette, drawerTouched, paletteOpenAtStart, setPaletteOpen } from "./drawers.js";
 import { insideMap, markerScale, metersPerPx, pointerToMeters } from "./view.js";
@@ -131,8 +134,9 @@ export function removePlacement(p) {
   const i = state.placements.indexOf(p);
   if (i !== -1) state.placements.splice(i, 1);
   // 取り消しの台帳からも外す。残すと、消えたものをもう一度消しにいく。
-  const j = state.mine.findIndex((e) => e.placement === p);
-  if (j !== -1) state.mine.splice(j, 1);
+  dropDone(history(), (e) => e.placement === p);
+  // 範囲選択で選んでいた列からも外す（消えたものを掴み続けない）。
+  dropPicked(p);
   if (state.selected === p) selectPlacement(null);
 }
 
@@ -194,16 +198,38 @@ export async function placeAt(point) {
     say("マップの外です。マップの上を押してください。");
     return;
   }
+  await addPlacement({ item_id: item.id, x_m: at.x_m, y_m: at.y_m });
+}
+
+/**
+ * 配置を1件作って保存する。**置く経路とやり直しの経路が共有する唯一の実体。**
+ *
+ * `seed` は `{ item_id, x_m, y_m, label, rank }`（注記と優先度は任意）。
+ * 座標がマップの中にあることは呼ぶ側が確かめる（置く側は案内を出したいが、
+ * やり直す側は元々マップの中にあったものなので確かめる必要が無い）。
+ *
+ * **`replay` のときだけ振る舞いを変える所は3つ。**
+ *   1. 注記の欄にフォーカスしない（やり直しは「書き始める」操作ではない）
+ *   2. 台帳に積むのに `recordReplay` を使う（やり直しの山を捨てない）
+ *   3. 注記と優先度を復元する（`POST /placements` は `label` は受けるが
+ *      **`rank` を受けない**ので、優先度だけは後から PATCH で付ける）
+ *
+ * 戻り値は作った配置、保存できなければ null。
+ */
+export async function addPlacement(seed, { replay = false } = {}) {
+  const item = state.catalog.get(seed.item_id) ?? null;
+  const label = seed.label ?? null;
+  const rank = Number.isInteger(seed.rank) ? seed.rank : null;
 
   placementUid += 1;
   const p = {
     uid: placementUid,
     id: null,
-    item_id: item.id,
-    x_m: at.x_m,
-    y_m: at.y_m,
-    label: null,
-    rank: null,
+    item_id: seed.item_id,
+    x_m: seed.x_m,
+    y_m: seed.y_m,
+    label,
+    rank,
     created_by: state.me.user.id,
   };
   state.placements.push(p);
@@ -212,19 +238,22 @@ export async function placeAt(point) {
   // 「置く → 書く」を1動作で終わらせる。メモ・守る・攻める・危険は、記号そのものには
   // 「守る」しか意味が無く、何をどう守るのかは書かないと伝わらない記号なので、
   // 置いた直後に注記の欄へ入れる（位置に紐づく判断を書きたい、が元々の要望）。
-  if (wantsNote(item.id)) document.getElementById("placement-label")?.focus();
+  if (!replay && wantsNote(seed.item_id)) document.getElementById("placement-label")?.focus();
   // 取り消しの台帳に、線と同じ列へ操作した順で載せる。
-  state.mine.push({ placement: p });
+  // **やり直しで作ったものは `recordReplay`**（やり直しの山を捨てない。history.js）。
+  const entry = { placement: p };
+  if (replay) recordReplay(history(), entry);
+  else record(history(), entry);
 
   // インクと同じく client_uuid で冪等にする（再送しても二重に増えない）。
   // 回転は 0 固定。footprint が全項目 NULL で向きに意味を持たせられないため。
   p.saving = postPlacements(state.plan.session.id, [{
     client_uuid: crypto.randomUUID(),
-    item_id: item.id,
-    x_m: at.x_m,
-    y_m: at.y_m,
+    item_id: seed.item_id,
+    x_m: seed.x_m,
+    y_m: seed.y_m,
     rotation: 0,
-    label: null,
+    label,
   }]).then((res) => {
     p.id = res.ids[0];
     if (p.marker) p.marker.dataset.placementId = String(res.ids[0]);
@@ -232,17 +261,33 @@ export async function placeAt(point) {
   });
 
   try {
-    await p.saving;
-    say(`${item.name_ja} を置きました。${placedNote(item)}`);
+    const id = await p.saving;
+    // 優先度は POST に乗らないので、やり直しのときだけ後から付ける。
+    // **落としても配置そのものは戻っている**ので、失敗しても作り直しは取り消さない。
+    if (replay && rank !== null) {
+      try {
+        await patchPlacement(state.plan.session.id, id, { rank });
+      } catch {
+        applyRank(p, null);
+      }
+    }
+    if (!replay) say(`${item ? item.name_ja : seed.item_id} を置きました。${placedNote(item)}`);
+    return p;
   } catch (e) {
     removePlacement(p);
-    say(`置けませんでした。${e.message}`, true);
+    if (!replay) say(`置けませんでした。${e.message}`, true);
+    return null;
   }
 }
 
 /**
- * 直前の配置を取り消す。取り消せたら台帳から消えたまま、失敗したら戻す。
+ * 直前の配置を取り消す。**戻せたら true、戻せなければ false。**
  * 消す権限は自分の配置にしかないが、台帳に載るのは自分が置いたものだけ。
+ *
+ * **台帳の出し入れはここでしない**（呼ぶ側 ＝ board/history.js の `undo()` が、
+ * 戻り値を見て「やり直しの山へ移す」か「台帳へ返す」かを決める）。
+ * ここで `state.mine.push` もしていた頃は、やり直しの山と台帳の両方に
+ * 同じ操作が居る状態が作れてしまう。
  */
 export async function undoPlacement(entry) {
   const p = entry.placement;
@@ -253,16 +298,17 @@ export async function undoPlacement(entry) {
     // 保存自体が失敗していた配置。もう画面に無いので取り消しは済んだ扱い。
     removePlacement(p);
     say("取り消しました。");
-    return;
+    return true;
   }
 
   try {
     await deletePlacement(state.plan.session.id, id);
     removePlacement(p);
     say("取り消しました。");
+    return true;
   } catch (e) {
-    state.mine.push(entry);
     say(`取り消せませんでした。${e.message}`, true);
+    return false;
   }
 }
 

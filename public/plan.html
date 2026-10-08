@@ -241,6 +241,12 @@
     <!-- 配置のマーカー。画面上で一定の大きさ（実寸は未実測なので描けない）。
          押すと詳細が出るので、当たり判定はここだけが持つ。 -->
     <g id="placements"></g>
+    <!-- 範囲選択の枠（「選択」の道具で引いている最中だけ中身が入る）。
+         **選ぶ対象より上**に置く。配置や地名の下に枠が隠れると、どこまで囲ったのかが
+         読めない。**エリアのプレビュー（#areas の .area-preview）とは別物**で、
+         見た目も分けてある（同じ見た目だと「塗ろうとしている」に見える）。
+         押せない（CSS で pointer-events:none）。中身は board/marquee.js。 -->
+    <g id="select-band" aria-hidden="true"></g>
     <!-- 他の人のカーソル（Phase R1）。**いちばん上**に置く。他人が指している
          場所が自分の置いた物の下に隠れると「ここ」が伝わらない。
          **マップ座標系に置く**ので、各自のズームとパンが違っても同じ地点を指す
@@ -405,15 +411,20 @@
        棚のすぐ上に置くのは、押した手元のそばで読ませるため。空なら板ごと消える。 -->
   <p id="status" role="status" aria-live="polite"></p>
 
-  <!-- 棚。**常に見えているのは5かたまり**（道具 / 取り消す / 建造物・円とマス /
-       ズーム / 表示）。たまにしか触らないものは「表示」の中に畳んだ。
+  <!-- 棚。**まとまりは4つ**（道具 / 置く / 取り消し / 見る）。
+       たまにしか触らないものは「表示」の中に畳んだ。
        ラベルは見える文字を短くし、読み上げ用の名前は aria-label に全文で持つ
-       （「射程」と出して「射程を表示」と読ませる）。 -->
+       （「射程」と出して「射程を表示」と読ませる）。
+
+       **並びは使う頻度の順。** `建造物` は置くたびに押すので「取り消し」より前に
+       出す（390px では棚が横スクロールになるので、初期表示に何が入るかは
+       そのまま「どれだけ手が届きやすいか」になる。e2e/plan-layout.spec.js が
+       `建造物` の右端が画面内にあることを固定している）。 -->
   <div id="rail">
     <div class="cluster">
       <span class="cluster-label" id="cluster-tool-label">道具</span>
       <div class="cluster-row">
-        <!-- ポインタが何をするかの排他の1組。**4つとも「押すと盤面で何が起きるか」**
+        <!-- ポインタが何をするかの排他の1組。**5つとも「押すと盤面で何が起きるか」**
              なので同じ組に入れる（地名を置くだけ別のまとまりにあると、
              いま何の道具かが2箇所に分かれて読めない）。
              **既定は「移動」**。地図を見るつもりのドラッグが線になってはいけない。
@@ -423,6 +434,7 @@
           <button id="tool-pen" type="button" aria-pressed="false">ペン</button>
           <button id="tool-eraser" type="button" aria-pressed="false" aria-label="消しゴム" title="消しゴム">消す</button>
           <button id="tool-callout" type="button" aria-pressed="false" aria-label="地名を置く" title="地名を置く">地名</button>
+          <button id="tool-select" type="button" aria-pressed="false" aria-label="範囲選択" title="範囲選択">選択</button>
         </div>
         <!-- 太さはペンの設定。**ペン（と消しゴム）を選んでいるときだけ出す。**
              使わない道具の設定を常に置いておくと、棚がそのぶん長くなる。 -->
@@ -431,7 +443,6 @@
           <button type="button" data-w="2" aria-pressed="true" aria-label="ふつう"><span class="bar"></span></button>
           <button type="button" data-w="3" aria-pressed="false" aria-label="太い"><span class="bar"></span></button>
         </span>
-        <button id="undo" type="button" aria-label="取り消す" title="取り消す">戻す</button>
       </div>
     </div>
 
@@ -440,6 +451,19 @@
       <div class="cluster-row">
         <button id="toggle-palette" type="button" aria-pressed="false" aria-expanded="false" aria-controls="palette">建造物</button>
         <button id="toggle-zones" type="button" aria-pressed="false" aria-expanded="false" aria-controls="zonepanel">円とマス</button>
+      </div>
+    </div>
+
+    <!-- 戻す・やり直すは**必ず隣同士**（離すと見つけられない）。
+         **`戻す` は台帳が空でも押せるままにする。** 無効にすると
+         e2e/plan-whiteboard.spec.js の drawLine() が「道具が使えるようになった合図」
+         として見ている `toBeEnabled()` が永久に来ない。空のときは理由を読み上げる。
+         無効にするのは `やり直す` だけ（押せるのに何も起きないボタンを置かない）。 -->
+    <div class="cluster">
+      <span class="cluster-label">取り消し</span>
+      <div class="cluster-row">
+        <button id="undo" type="button" aria-label="取り消す" title="取り消す">戻す</button>
+        <button id="redo" type="button" aria-label="やり直す" title="やり直す（Ctrl+Shift+Z）" disabled>やり直す</button>
       </div>
     </div>
 

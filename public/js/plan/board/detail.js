@@ -11,10 +11,12 @@ import {
   FOB_RANGE_NOTE, FOB_SIDE_M, HOTZONE_RADIUS_M, KINDS, LABEL_MAX_LEN, RANK_CHOICES, costText,
   hasMinRange, isFob, isHotzone, isUnverified, rangeText,
 } from "../placements.js";
+import { selectionText } from "../marquee.js";
 import { clearChildren } from "../render.js";
 import { canEdit, state } from "../state.js";
 import { WRITE_DENIED } from "../visibility.js";
 import { applyCalloutName, calloutId, removeCallout, selectCallout } from "./callout.js";
+import { clearPicked, deletePicked } from "./marquee.js";
 import {
   applyLabel, applyRank, placementId, removePlacement, selectPlacement,
 } from "./place.js";
@@ -222,7 +224,9 @@ async function saveRank(p, rank) {
  */
 export function renderDetail() {
   if (!detailEl) return;
-  // パネルは1枚を配置と地名で使い回す。選べるのは一度に片方だけ。
+  // パネルは1枚を配置・地名・範囲選択で使い回す。選べるのは一度に1つだけ。
+  // **範囲選択をいちばん先に見る**（まとめて選んだら1件の選択は外れている）。
+  if (state.picked) { renderPickedDetail(state.picked); return; }
   if (state.selectedCallout) { renderCalloutDetail(state.selectedCallout); return; }
   const p = state.selected;
   if (!p) { detailEl.hidden = true; clearChildren(detailEl); return; }
@@ -342,6 +346,68 @@ async function deleteSelected(button) {
     );
     button.disabled = false;
   }
+}
+
+/**
+ * 枠で選んだものの詳細（検視台を「いま選んでいる範囲」について語らせる）。
+ *
+ * **棚にボタンを増やさない**（design-system §6）。まとめて消す導線は、1件消す
+ * 導線（`#placement-delete`）と同じ場所・同じ見た目（`.quiet .danger`）に置く。
+ *
+ * **件数は分けて出す。** 他人のものが混ざっていると操作は自分のものにしか
+ * 効かないので、「7件を選択」とだけ出して4件しか消えないと、
+ * 3件が消えなかったことに気づけない（仕様 §2）。
+ */
+function renderPickedDetail(sel) {
+  clearChildren(detailEl);
+
+  const head = document.createElement("div");
+  head.className = "head";
+  const h2 = document.createElement("h2");
+  h2.textContent = "選んだもの";
+  head.appendChild(h2);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "close quiet";
+  close.textContent = "閉じる";
+  close.addEventListener("click", () => clearPicked());
+  head.appendChild(close);
+  detailEl.appendChild(head);
+
+  const total = sel.items.length;
+  const mine = sel.mine.length;
+  const dl = document.createElement("dl");
+  addRow(dl, "件数", selectionText(total, mine), true);
+  detailEl.appendChild(dl);
+
+  // 他人のものが混ざっているときだけ、なぜ効かないのかを書く
+  // （混ざっていなければ言う相手がいない）。
+  if (mine < total) {
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent =
+      "他の人が置いたものは動かせません・消せません。できるのは置いた本人と管理者だけです。";
+    detailEl.appendChild(note);
+  }
+
+  const hint = document.createElement("p");
+  hint.className = "src";
+  hint.textContent = "選んだものを掴むとまとめて動かせます。Esc で選択を解きます。";
+  detailEl.appendChild(hint);
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.id = "picked-delete";
+  del.className = "quiet danger";
+  del.textContent = `選んだ${mine}件を消す`;
+  if (!state.editable || mine === 0) {
+    del.disabled = true;
+    del.title = state.editable ? "自分のものが1件も含まれていません" : WRITE_DENIED;
+  }
+  del.addEventListener("click", () => { del.disabled = true; deletePicked(); });
+  detailEl.appendChild(del);
+
+  detailEl.hidden = false;
 }
 
 /**

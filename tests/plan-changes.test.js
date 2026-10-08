@@ -10,7 +10,9 @@
 //   3. **失敗しても黙って諦める** — 再取得が落ちても手元の盤面はそのまま
 import { describe, expect, it, vi } from "vitest";
 
-import { CHANGE_DEBOUNCE_MS, createChanges, notifies } from "../public/js/plan/changes.js";
+import {
+  CHANGE_DEBOUNCE_MS, createChanges, createNotifyGate, notifies,
+} from "../public/js/plan/changes.js";
 
 /** 既定の組み立て。`busy` は「いま作り直してはいけないか」。 */
 function setup({ busy = () => false, reload = vi.fn(async () => {}) } = {}) {
@@ -223,5 +225,89 @@ describe("createChanges", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(reload).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+// ── まとめ操作の間だけ通知を束ねる門 ──────────────────────────────
+// **これは送る側（自分）の話。** 上の createChanges は受ける側（他の人）の話で、
+// あちらのデバウンスは「20人が同じ通知を受けて同時に再取得する」のを束ねる。
+//
+// 門が要るのは、**まとめて消す・まとめて動かすに専用の API が無い**ため。
+// DELETE も PATCH も1件ずつなので、20件消すと api.js の call() を20回通る。
+// 素朴に通すと `chg` が20通飛び、相手は20回取り直す。
+describe("createNotifyGate", () => {
+  it("束ねていないときは、そのたびに送る", () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    gate.notify();
+    gate.notify();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  // 受け入れ条件11の土台。N件でも1回。
+  it("まとめ操作の中では溜めて、終わってから1回だけ送る", async () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    await gate.batch(() => {
+      for (let i = 0; i < 20; i += 1) gate.notify();
+      expect(send, "まとめ操作の最中は送らない").not.toHaveBeenCalled();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("1件も通知が無かったまとめ操作では、何も送らない", async () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    await gate.batch(() => {});
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  // 入れ子を深さで数える。浅い数え方（真偽値1つ）にすると、内側のまとめ操作が
+  // 終わった時点で流れてしまい、外側の残りが2通目として飛ぶ。
+  it("入れ子でも、いちばん外側が終わるまで送らない", async () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    await gate.batch(async () => {
+      gate.notify();
+      await gate.batch(() => { gate.notify(); });
+      expect(send, "内側が終わっただけでは送らない").not.toHaveBeenCalled();
+      gate.notify();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("まとめ操作が投げても、溜めたぶんは送られる（送ってから投げ直す）", async () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    await expect(gate.batch(() => {
+      gate.notify();
+      throw new Error("途中で失敗");
+    })).rejects.toThrow("途中で失敗");
+    // **1件は消えている**（通った DELETE はサーバに効いている）ので、
+    // 知らせないと相手の画面に消えたものが残る。
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("まとめ操作の戻り値をそのまま返す", async () => {
+    const gate = createNotifyGate(vi.fn());
+    expect(await gate.batch(() => 42)).toBe(42);
+  });
+
+  it("次のまとめ操作に前回の溜めを持ち越さない", async () => {
+    const send = vi.fn();
+    const gate = createNotifyGate(send);
+    await gate.batch(() => { gate.notify(); });
+    expect(send).toHaveBeenCalledTimes(1);
+    await gate.batch(() => {});
+    expect(send, "2回目は送るものが無い").toHaveBeenCalledTimes(1);
+  });
+
+  // 知らせられなくても、消した・動かしたことそのものは済んでいる。
+  it("送る所が投げても、まとめ操作は失敗にしない", async () => {
+    const send = vi.fn(() => { throw new Error("WebSocket が切れている"); });
+    const gate = createNotifyGate(send);
+    await expect(gate.batch(() => { gate.notify(); })).resolves.toBeUndefined();
+    gate.notify();
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

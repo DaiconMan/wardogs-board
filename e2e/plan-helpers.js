@@ -235,6 +235,39 @@ export async function showWholeMap(page) {
   await page.evaluate(() => document.activeElement?.blur?.());
 }
 
+/** いま見えている範囲の幅（メートル）。viewBox の3つ目。 */
+export const viewWidthM = (page) => page.locator("#board")
+  .evaluate((el) => Number(el.getAttribute("viewBox").split(" ")[2]));
+
+/**
+ * ズームの補間（`ZOOM_ANIM_MS` = 150ms）が終わって viewBox が落ち着くのを待つ。
+ *
+ * **「拡大」「縮小」を続けて押すテストは必ずこれを挟むこと。**
+ * `animateTo` は押された時点の `state.view` を起点に倍率を掛け直すので、
+ * **動いている途中で次を押すと、そのぶん縮尺が目減りする。**
+ *
+ * 実測（2026-10-08、全体表示から8回押した）:
+ *
+ * | | 読んだ値 | 最終幅 |
+ * |---|---|---|
+ * | 待たない | `[29013, 27652, 19530, 13461, …, 2378]` | **1150** |
+ * | 毎回待つ | `[29013, 18133, 11333, 7083, …, 1081]` | **676**（理論値どおり） |
+ *
+ * **待たないと 1.7 倍広いまま終わる。** 機械の負荷が高いほど目減りが大きく、
+ * 「8回押せば 2000m を切る」という前提のテストが**負荷の高いときだけ落ちる**
+ * （公開リポジトリの全件実行で `plan-towers.spec.js` が1本落ちた）。
+ */
+export async function settleView(page) {
+  let last = -1;
+  for (let i = 0; i < 25; i += 1) {
+    const w = await viewWidthM(page);
+    if (w === last) return w;
+    last = w;
+    await page.waitForTimeout(60);
+  }
+  return viewWidthM(page);
+}
+
 /**
  * 「表示」のメニューを開く（既に開いていれば何もしない）。
  *

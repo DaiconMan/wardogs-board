@@ -10,16 +10,19 @@ import {
   accountMenu, board, darkQuery, inkLayer, paletteEl, viewMenu, visibilityMenu,
   widthsEl, zonePanelEl,
 } from "../dom.js";
-import { encodePoints, simplify } from "../ink.js";
+import { dropDone, record, recordReplay } from "../history.js";
+import { encodePoints, simplify, toSmoothPath } from "../ink.js";
 import { createStrokePath } from "../render.js";
-import { state } from "../state.js";
-import { clearZoneKind, setAreasVisible, setZoneKind, undoArea } from "./area.js";
+import { history, state } from "../state.js";
+import { clearZoneKind, setAreasVisible, setZoneKind } from "./area.js";
 import { applyBasemapMode, loadBasemapMode, setBasemapMode } from "./basemap.js";
-import { setCalloutMode, setCalloutsVisible, undoCallout } from "./callout.js";
+import { setCalloutMode, setCalloutsVisible } from "./callout.js";
 import { beginInk, endInk, extendInk } from "./cursor.js";
 import { clearPick, setPaletteOpen, setZonePanelOpen } from "./drawers.js";
 import { setSpawnsVisible, setTowersVisible } from "./fixtures.js";
-import { setRangesVisible, undoPlacement } from "./place.js";
+import { wireHistory } from "./history.js";
+import { clearPicked } from "./marquee.js";
+import { setRangesVisible } from "./place.js";
 import {
   ZOOM_BUTTON_FACTOR, clampToMap, insideMap, pointerToMeters, showAll, zoomByButton,
 } from "./view.js";
@@ -79,8 +82,7 @@ export function cancelStroke() {
 }
 
 function drop(entry) {
-  const i = state.mine.indexOf(entry);
-  if (i !== -1) state.mine.splice(i, 1);
+  dropDone(history(), (e) => e === entry);
 }
 
 /**
@@ -98,34 +100,61 @@ export async function finishStroke() {
   // 押しただけ（タップ）。線にしないので、相手にもその場で終わりを伝える。
   if (points.length < 2) { path.remove(); endInk(); return; }
 
-  // 保存の Promise を先に台帳へ載せる。指を離した直後に取り消しを押されても、
-  // その線が「自分が最後に引いた線」として拾えるようにするため。
-  const entry = { path };
-  entry.saving = postInk(state.plan.session.id, [{
-    client_uuid: crypto.randomUUID(),
-    color: state.color,
-    width: state.width,
-    points: encodePoints(simplify(points)),
-  }]).then((res) => {
-    path.dataset.strokeId = String(res.ids[0]);
-    path.dataset.owner = state.me.user.id;
-    return res.ids[0];
-  });
-  state.mine.push(entry);
-
   try {
-    await entry.saving;
-    // 保存を待つ間に取り消されていたら、その結果の表示を上書きしない。
-    if (state.mine.includes(entry)) say("保存しました。");
-  } catch (e) {
-    drop(entry);
-    path.remove();
-    say(`保存できませんでした。${e.message}`, true);
+    // **間引いたあとの点を台帳に持たせる**（保存したものと同じ形）。生の点を
+    // 持つと、やり直した線が元の線と1点ずつ違う形になる。
+    await saveStroke({ color: state.color, width: state.width, points: simplify(points) }, { path });
   } finally {
     // **成功でも失敗でも必ず外す。** 外さないと、相手の画面に引きっぱなしの線が
     // ポインタを止めた位置で残る（次に引き始めるまで `k` が乗り続ける）。
     // 失敗したときは `chg` が飛んでいないので、相手はその場で消す——正しい。
     endInk();
+  }
+}
+
+/**
+ * 線を1本保存して台帳に積む。**引き終わった経路とやり直しの経路が共有する実体。**
+ *
+ * `path` を渡せばその要素をそのまま使う（引き終わった線は既に盤面に出ている）。
+ * 渡さなければ作って置く（やり直し）。
+ *
+ * **台帳に `ink` を持たせるのがこの関数の肝。** 以前は `{ path, saving }` だけで、
+ * 色・太さ・点は `postInk()` に渡したあと捨てていたので、戻した線をやり直せなかった。
+ *
+ * 戻り値は台帳の項目、保存できなければ null。
+ */
+export async function saveStroke(ink, { path = null, replay = false } = {}) {
+  const node = path ?? inkLayer.appendChild(createStrokePath(ink));
+  if (!path) {
+    node.setAttribute("d", toSmoothPath(ink.points.map((p) => state.coords.toSvg(p))));
+  }
+
+  // 保存の Promise を先に台帳へ載せる。指を離した直後に取り消しを押されても、
+  // その線が「自分が最後に引いた線」として拾えるようにするため。
+  const entry = { path: node, ink };
+  entry.saving = postInk(state.plan.session.id, [{
+    client_uuid: crypto.randomUUID(),
+    color: ink.color,
+    width: ink.width,
+    points: encodePoints(ink.points),
+  }]).then((res) => {
+    node.dataset.strokeId = String(res.ids[0]);
+    node.dataset.owner = state.me.user.id;
+    return res.ids[0];
+  });
+  if (replay) recordReplay(history(), entry);
+  else record(history(), entry);
+
+  try {
+    await entry.saving;
+    // 保存を待つ間に取り消されていたら、その結果の表示を上書きしない。
+    if (!replay && state.mine.includes(entry)) say("保存しました。");
+    return entry;
+  } catch (e) {
+    drop(entry);
+    node.remove();
+    if (!replay) say(`保存できませんでした。${e.message}`, true);
+    return null;
   }
 }
 
@@ -157,35 +186,31 @@ export async function eraseAt(evt) {
   }
 }
 
-// 取り消しは確認を出さない。押した結果はすぐ画面に出るので、
-// 聞き返すほうが手を止める（間違えたらもう一度引ける）。
-//
-// 台帳には線と配置が操作した順に入っているので、末尾から種類を見て戻す。
-// 「線だけ取り消せる」と、誤って置いたものを消す手段がパレットと詳細を
-// 開き直す経路しか無くなる（オーナー報告の不具合3）。
-async function undo() {
-  const entry = state.mine.pop();
-  if (entry === undefined) { say("取り消せる操作がありません。"); return; }
-  if (entry.placement) { await undoPlacement(entry); return; }
-  if (entry.callout) { await undoCallout(entry); return; }
-  if (entry.area) { await undoArea(entry); return; }
-
+/**
+ * 線1本を取り消す（台帳の末尾が線だったとき）。戻せたら true。
+ *
+ * 取り消しそのものの入口は board/history.js の `undo()`。4種類の振り分けを
+ * あちらに置いて、種類ごとの手当てはそれぞれのファイルに置く作法に揃えてある
+ * （配置は `undoPlacement`、地名は `undoCallout`、エリアは `undoArea`）。
+ */
+export async function undoStroke(entry) {
   let id;
   try {
     id = await entry.saving;
   } catch {
     // 保存自体が失敗していた線。もう画面にないので、取り消しは済んだ扱い。
     say("取り消しました。");
-    return;
+    return true;
   }
 
   try {
     await deleteInk(state.plan.session.id, id);
     entry.path.remove();
     say("取り消しました。");
+    return true;
   } catch (e) {
-    state.mine.push(entry);
     say(`取り消せませんでした。${e.message}`, true);
+    return false;
   }
 }
 
@@ -205,7 +230,9 @@ async function undo() {
  * でも「塗ったものを消す」という意味で効く**ので、押した表示にする
  * （道具の名前と効き目を食い違わせない）。
  */
-const MODE_BUTTONS = [["tool-pan", "pan"], ["tool-pen", "pen"], ["tool-eraser", "eraser"]];
+const MODE_BUTTONS = [
+  ["tool-pan", "pan"], ["tool-pen", "pen"], ["tool-eraser", "eraser"], ["tool-select", "select"],
+];
 
 export function setMode(mode) {
   state.mode = mode;
@@ -240,7 +267,13 @@ export function wireTools() {
       // （押した道具と盤面の挙動を一致させる）。
       clearPick();
       clearZoneKind();
+      // 範囲選択も外す。選んだまま別の道具に移ると、画面に選択の印が残ったまま
+      // それに効かない操作をすることになる（仕様 §2 の「解除」の3つ目）。
+      if (value !== "select") clearPicked();
       setMode(value);
+      if (value === "select") {
+        say("マップをドラッグすると、枠の中の配置と地名を選びます。");
+      }
     });
   }
   setMode(state.mode);
@@ -292,7 +325,9 @@ export function wireTools() {
       }
     });
   }
-  document.getElementById("undo").addEventListener("click", undo);
+  // 「戻す」と「やり直す」は board/history.js が受け持つ（4種類の振り分けと
+  // 2つの山の出し入れがそこに揃っているので、配線もあちらに置く）。
+  wireHistory();
 
   document.getElementById("zoom-in").addEventListener("click", () => zoomByButton(1 / ZOOM_BUTTON_FACTOR));
   document.getElementById("zoom-out").addEventListener("click", () => zoomByButton(ZOOM_BUTTON_FACTOR));

@@ -18,7 +18,7 @@ import { renderStroke } from "../render.js";
 import { state } from "../state.js";
 import { refreshAreas } from "./area.js";
 import { showCallouts } from "./callout.js";
-import { refreshDetail } from "./detail.js";
+import { refreshDetail, renderDetail } from "./detail.js";
 import { settleLive } from "./live.js";
 import { showPlacements } from "./place.js";
 
@@ -45,9 +45,15 @@ export const hasPendingSave = () =>
  * ドラッグ中・描いている最中・塗っている最中・ピンチ中に作り直すと、
  * **手元の操作が消える**。欄に文字を打っている間も同じ（詳細パネルは
  * 作り直しで組み直される）。
+ *
+ * **まとめ操作（`state.bulk`）もここで止める。** まとめて動かす・まとめて消すは
+ * **指を離したあとに N 回の PATCH / DELETE が流れる**ので、その間ポインタは
+ * 触れていないし `drag` も無い。止めないと他の人の `chg` が着地して、
+ * まだ保存していない座標がサーバの古い値へ引き戻される（消す途中のものは生え直す）。
  */
 export function boardBusy(active = document.activeElement) {
   if (state.drag || state.drawing || state.paint || state.pan || state.pinch) return true;
+  if (state.bandDrag || state.band || state.bulk) return true;
   if (state.pointers.size > 0) return true;
   if (active && /^(input|textarea|select)$/i.test(active.tagName)) return true;
   return hasPendingSave();
@@ -126,4 +132,7 @@ async function applyBoard(id) {
   // ここへ来る時点で欄に入力中でないことは `boardBusy()` が保証している。
   if (state.selected) refreshDetail(state.selected);
   else if (state.selectedCallout) refreshDetail(state.selectedCallout);
+  // 範囲選択の件数も出し直す。他の人が選択の中の物を消していれば
+  // `dropPicked` が列から外しているので、出している数が古いままになる。
+  else if (state.picked) renderDetail();
 }

@@ -90,6 +90,8 @@ export const PLAN_BINDINGS = {
 // | 9961–9980   | plan-avatar.spec.js             |
 // | 9981–9999   | plan-liveink.spec.js            |
 // | 10001–10100 | plan-cursors.spec.js（在室50人の2本だけ。下記） |
+// | 10102–10120 | plan-redo.spec.js               |
+// | 10121–10140 | plan-marquee.spec.js            |
 // | 93/96/97/98/99 の x40 x41 x50 x51 | shots.spec.js（`npm run shots` 専用） |
 //
 // **既にある重なり**（2026-09-30 時点。今は落ちていないが、件数を見る
@@ -98,7 +100,7 @@ export const PLAN_BINDINGS = {
 //   * 9301–9310   plan-placements ↔ plan-navigation
 //   * 9600–9620   plan-areas ↔ plan-callouts ↔ plan-zones
 //
-// **次に取るなら 5桁（10102 以降）。4桁は 9999 まで埋まった。**
+// **次に取るなら 5桁（10141 以降）。4桁は 9999 まで埋まった。**
 // shots.spec.js は 98xx / 99xx の一部（9840 / 9841 / 9850 / 9851）を使うので、
 // そこだけは避ける。
 //

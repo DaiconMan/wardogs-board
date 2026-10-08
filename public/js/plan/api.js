@@ -8,7 +8,7 @@
 //     editing. Quietly returning empty data would make a dead network
 //     indistinguishable from erased ink.
 
-import { notifies } from "./changes.js";
+import { createNotifyGate, notifies } from "./changes.js";
 import { GUEST_HEADER, ensureGuestId } from "./guest.js";
 
 const jsonHeaders = { "content-type": "application/json" };
@@ -37,6 +37,26 @@ const guestHeader = () => ({ [GUEST_HEADER]: ensureGuestId() });
 let changed = null;
 export const onChanged = (fn) => { changed = fn; };
 
+/**
+ * まとめ操作（まとめて消す・まとめて動かす・やり直し1回）の間、通知を束ねる門。
+ *
+ * **まとめて消す API は無い。** DELETE も PATCH も1件ずつなので、20件消すと
+ * 下の `call()` を20回通る。素朴に通すと `chg` が20通飛び、**相手は20回取り直す。**
+ * 門をくぐらせれば、終わってから1回だけ飛ぶ。
+ *
+ * **`changed` を直に呼ばず、必ずこの門を通す**（フックは今までどおり1箇所のまま）。
+ * 中身と理由は changes.js の `createNotifyGate`。
+ */
+const gate = createNotifyGate(() => { if (changed) changed(); });
+
+/**
+ * この中で起きた書き込みの通知を1回にまとめる。戻り値は `fn` の戻り値。
+ *
+ * 中が投げても、それまでに通った書き込みのぶんは1回送ってから投げ直す
+ * （通った DELETE はサーバに効いているので、知らせないと相手の画面に残る）。
+ */
+export const batchCalls = (fn) => gate.batch(fn);
+
 async function call(path, options = {}) {
   const res = await fetch(path, {
     cache: "no-store",
@@ -49,14 +69,9 @@ async function call(path, options = {}) {
     err.status = res.status;
     throw err;
   }
-  // **上乗せなので、ここで投げない。** 知らせられなくても保存は済んでいる。
-  if (changed && notifies(path, options.method, true)) {
-    try {
-      changed();
-    } catch {
-      /* 知らせられなかっただけ。呼び出し元には成功を返す */
-    }
-  }
+  // **上乗せなので、ここで投げない。** 知らせられなくても保存は済んでいる
+  // （投げないことの面倒は門が見る。changes.js の `createNotifyGate`）。
+  if (notifies(path, options.method, true)) gate.notify();
   return body;
 }
 

@@ -17,6 +17,7 @@ import {
 } from "./board/cursor.js";
 import { renderSpawns, renderTowers } from "./board/fixtures.js";
 import { drawBounds, drawGrid } from "./board/grid.js";
+import { syncHistoryButtons } from "./board/history.js";
 import { setLiveReloadPending } from "./board/live.js";
 import { loadPlacements } from "./board/place.js";
 import { wireBoard, wireKeys } from "./board/pointer.js";
@@ -197,6 +198,10 @@ async function main() {
   // 判定は `_lib/visibility.js` とまったく同じ関数（canWrite）。
   if (canWriteHere()) setEditable(true);
   else setViewOnly();
+  // **`setEditable` のあとに呼ぶ。** あれは棚のボタンを名前も見ずに全部
+  // 書き換えるので（`chrome.js`）、「やり直せる操作が無いから押せない」を
+  // 押せる側へ戻してしまう。開いた直後は山が空なので、ここで止め直す。
+  syncHistoryButtons();
   updateRailOverflow();
 
   // 在室一覧（同じ作戦を今開いている人）。**await しない。**

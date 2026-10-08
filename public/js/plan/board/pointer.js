@@ -14,6 +14,11 @@ import { takeCarry } from "./carry.js";
 import { sendCarry } from "./cursor.js";
 import { refreshDetail } from "./detail.js";
 import { clearPick } from "./drawers.js";
+import { redo, undo } from "./history.js";
+import {
+  bandDragMove, bandMove, beginBand, beginBandDrag, cancelBand, cancelBandDrag, clearPicked,
+  deletePicked, endBand, endBandDrag, pickedHit,
+} from "./marquee.js";
 import { moveMarkerTo, placeAt, selectPlacement } from "./place.js";
 import {
   beginStroke, cancelStroke, eraseAt, extendStroke, finishStroke, setMode,
@@ -188,6 +193,8 @@ export function wireBoard() {
     if (state.pointers.size === 2) {
       cancelStroke();
       cancelDrag();
+      cancelBandDrag();
+      cancelBand();
       cancelPaint();
       state.pan = null;
       delete board.dataset.panning;
@@ -201,6 +208,20 @@ export function wireBoard() {
     // 編集できない間（読み込み中・API 不通）は押しても選べるものが無い。
     // 「移動」のときだけパンする。
     if (!state.editable) { if (state.mode === "pan") beginPan(evt); return; }
+
+    // 「選択」の道具。**`forcesPan` の後、他の何よりも前**に見る。
+    //
+    // ここを下に置くと、置いてあるものを押したときに下の `hit` が先に拾って
+    // 1件の選択になり、枠を引き始められない。**「移動」の経路（下の
+    // `state.mode === "pan"`）には1行も触っていない**ので、D-049 の
+    // 「見るつもりのドラッグが描画になる」は再発しない。
+    if (state.mode === "select") {
+      // 選んだものを掴んだらまとめて運ぶ。それ以外は新しい枠を引き始める
+      // （選択の外を押す ＝ 解除は、枠を引かずに離したときに endBand が見る）。
+      if (pickedHit(evt.target)) beginBandDrag(evt);
+      else beginBand(evt);
+      return;
+    }
 
     // 置いてあるマーカーを押したときは、道具に関係なく「選ぶ」。詳細を見るのに
     // いちいち道具を持ち替えさせない。射程リングは #ranges 側で当たり判定を
@@ -266,6 +287,8 @@ export function wireBoard() {
     if (state.pinch) { movePinch(); return; }
     updateReadout(evt);
     if (state.drag) { dragMarker(evt); return; }
+    if (state.bandDrag) { bandDragMove(evt); return; }
+    if (state.band) { bandMove(evt); return; }
     if (state.paint) { paintMove(evt); return; }
     if (state.pan) {
       // 閾値を超えるまでは動かさない。超えた時点でクリック扱いを取り下げる。
@@ -287,6 +310,17 @@ export function wireBoard() {
     if (state.drag) {
       if (canceled) cancelDrag();
       else { const d = state.drag; state.drag = null; endDrag(d); }
+    }
+    if (state.bandDrag) {
+      if (canceled) cancelBandDrag();
+      else { const d = state.bandDrag; state.bandDrag = null; endBandDrag(d); }
+    }
+    if (state.band) {
+      const b = state.band;
+      state.band = null;
+      // 枠そのものは、選べたかどうかに関係なく片付ける（結果は印と件数に出る）。
+      b.rect.remove();
+      if (!canceled) endBand(b, evt);
     }
     if (state.paint) {
       const p = state.paint;
@@ -372,12 +406,43 @@ export function wireKeys() {
     copyMarkAt(state.lastPoint ?? viewCentreM());
   });
 
+  // 戻す（Ctrl+Z）とやり直す（Ctrl+Shift+Z / Ctrl+Y）。
+  //
+  // **やり直しは2通とも受ける。** Windows は Ctrl+Y、macOS と多くの描画ツールは
+  // Ctrl/Cmd+Shift+Z で、どちらかしか効かないと「効かない環境」が生まれる。
+  // 欄に文字を打っている間は横取りしない（入力欄自身の取り消しが効くべき）。
+  addEventListener("keydown", (evt) => {
+    if (!(evt.ctrlKey || evt.metaKey) || evt.altKey || onControl(evt.target)) return;
+    const key = evt.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    evt.preventDefault();
+    if (key === "y" || evt.shiftKey) redo();
+    else undo();
+  });
+
+  // 選んだものをまとめて消す。**Delete と Backspace の両方**（指の置き場所が
+  // キーボードによって違う）。**押せるときだけ効く**ので、選んでいなければ何もしない。
+  addEventListener("keydown", (evt) => {
+    if (evt.key !== "Delete" && evt.key !== "Backspace") return;
+    if (evt.ctrlKey || evt.metaKey || evt.altKey || onControl(evt.target)) return;
+    if (!state.editable || !state.picked || state.picked.mine.length === 0) return;
+    evt.preventDefault();
+    deletePicked();
+  });
+
   // Esc でパレットの選択を外して既定の道具に戻す。選んだ項目を外す手段が
   // 「同じ項目をもう一度押す」しか無く、パレットを閉じたあとでは
   // 配置モードから抜けられなかった（オーナー報告の不具合3）。
   // 地名を置く道具も同じ Esc で抜ける（抜け方を道具ごとに変えない）。
   addEventListener("keydown", (evt) => {
     if (evt.key !== "Escape") return;
+    // **範囲選択はいちばん先に解く。** 道具から抜けるより前に選択を外す
+    // （選んだまま道具が変わると、どれに効く操作なのかが読めなくなる）。
+    if (state.picked) {
+      clearPicked();
+      say("選択を解きました。");
+      return;
+    }
     if (state.mode === "callout") {
       setCalloutMode(false);
       say("地名を置くのをやめました。移動に戻ります。");

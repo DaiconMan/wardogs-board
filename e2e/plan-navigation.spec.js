@@ -98,11 +98,14 @@ test.describe("道具の並び", () => {
     await page.goto(planUrl(`/plan?id=${planId}`));
     await expect(page.locator("#board")).toBeVisible();
 
-    // 「道具」「置く」「見る」の3つ。平らに並べない。
-    await expect(page.locator("#rail > .cluster")).toHaveCount(3);
-    // 移動・ペン・消す・地名は排他の1組（ポインタが何をするかの4択）。
+    // 「道具」「置く」「取り消し」「見る」の4つ。平らに並べない。
+    // **「取り消し」が独立したまとまりなのは、戻す・やり直すの2つが隣同士で
+    // なければ見つけられないため。** 「置く」の中へ挟むと、建造物と円とマスが
+    // 棚の2箇所に分かれる（同じ種類のものを2箇所に置かない）。
+    await expect(page.locator("#rail > .cluster")).toHaveCount(4);
+    // 移動・ペン・消す・地名・選択は排他の1組（ポインタが何をするかの5択）。
     const modes = page.locator("#tool-modes button");
-    await expect(modes).toHaveCount(4);
+    await expect(modes).toHaveCount(5);
   });
 
   test("背景の切り替えはメニューにまとめ、今の設定をボタンに出す", async ({ page, context }) => {

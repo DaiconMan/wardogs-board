@@ -31,12 +31,26 @@ export const state = {
   mode: DEFAULT_MODE,
   drawing: null,     // { points: [{x_m,y_m}], path: SVGPathElement }
   // このセッションで自分がやった操作を、やった順に持つ（取り消しの台帳）。
-  //   線   … { path, saving: Promise<id> }
+  //   線   … { path, saving: Promise<id>, ink: { color, width, points } }
   //   配置 … { placement }
+  //   地名 … { callout }
+  //   エリア … { area }
   // 線を { path, saving } の形にしてあるのは、保存が終わる前に取り消し・
   // 消しゴムが来ても「保存を待ってから消す」ができるようにするため。
   // 種類が混ざっているので、取り消しは末尾から順に見て種類ごとに戻す。
+  //
+  // **`ink` は「やり直す」ために要る中身**（色・太さ・点の列）。配置・地名・エリアは
+  // オブジェクト自身が中身を持っているが、線は `postInk()` に渡したら捨てていた。
   mine: [],
+  // 戻した操作の**写し**を積む山（やり直しの山）。中身は history.js の `snapshotOf`。
+  // **参照ではなく値**（戻す ＝ 画面のオブジェクトが消えるので、参照では作り直せない）。
+  // 新しい操作をしたら捨てる（分岐した履歴を持たない）。
+  undone: [],
+  // まとめ操作（まとめて消す・動かす）が走っている最中か。
+  // **盤面の取り直しを止めるために要る**（board/reload.js の `boardBusy`）。
+  // 指を離したあとに N 回の PATCH / DELETE が流れる間はポインタが触れていないので、
+  // これが無いと他の人の `chg` が着地して、まだ保存していない座標が古い値へ戻る。
+  bulk: false,
   editable: false,
   // 見えている範囲（メートル）。null の間は盤面の操作を全部受け付けない。
   view: null,
@@ -96,9 +110,49 @@ export const state = {
   showAreas: true,
   // { from, to, rect, start, slop } 塗っている最中（プレビューを出している）
   paint: null,
+  // ── 範囲選択（「選択」の道具）────────────────────────────────
+  // **対象は配置と地名だけ**（線は消しゴム、エリアは塗りの取り消しがある）。
+  // { from, to, rect, start, slop } 枠を引いている最中（プレビューを出している）。
+  // エリアの `paint` と同じ形にしてある（引いている最中の持ち方を2通り作らない）。
+  band: null,
+  // 枠で選んだもの。`{ items, mine }` で、`items` には**他人のものも入る**
+  // （枠に入ったことは見せる。ただし操作は `mine` にしか効かない）。
+  // 詳細パネルは件数の内訳をここから出す。
+  picked: null,
+  // { items, from: [{x_m,y_m}…], start, slop, moved } まとめて運んでいる最中。
+  // 1個のドラッグ（`drag`）とは別に持つ。**運んでいる最中を相手に流さない**
+  // （D-069 の仕組みは1個を前提にしていて、複数を載せると通が太る。v1 の割り切り）。
+  bandDrag: null,
   // 最後にポインタがあった地点（メートル）。`c` キーでのコピーがここを使う。
   lastPoint: null,
 };
 
 /** 動かせる・消せるのは置いた本人と管理者だけ（サーバ側の判定と同じ）。 */
 export const canEdit = (p) => p.created_by === state.me?.user?.id || state.me?.user?.role === "admin";
+
+/**
+ * 「戻す」「やり直す」の2つの山を1つの形で渡す（history.js の関数が受ける形）。
+ *
+ * **毎回包み直すが、中の配列は本物**なので、積む・捨てるはそのまま state に効く。
+ * 山の持ち主を state.js のまま据え置けるので、history.js は何も import せずに済む。
+ */
+export const history = () => ({ done: state.mine, undone: state.undone });
+
+/**
+ * 範囲選択で選んでいた列から1件外す。**消えたものを掴み続けないため。**
+ *
+ * 呼ぶのは「画面から配置・地名を外す所」（`removePlacement` / `removeCallout`）。
+ * 外した結果1件も残らなければ選択そのものを解く（0件の選択を抱えない）。
+ *
+ * ここに置いてあるのは、**消す側（place.js / callout.js）が範囲選択の実装を
+ * import せずに済ませるため**。盤面の持ち物の後片付けなので state の受け持ち。
+ */
+export function dropPicked(o) {
+  const sel = state.picked;
+  if (!sel) return;
+  for (const list of [sel.items, sel.mine]) {
+    const i = list.indexOf(o);
+    if (i !== -1) list.splice(i, 1);
+  }
+  if (sel.items.length === 0) state.picked = null;
+}

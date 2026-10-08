@@ -22,6 +22,7 @@ export const placeLayer = document.getElementById("placements");
 export const calloutLayer = document.getElementById("callouts");
 // 他の人のカーソル。**マップ座標系に置く**ので、パンとズームに自動で追従する。
 export const cursorLayer = document.getElementById("cursor-layer");
+export const bandLayer = document.getElementById("select-band");
 export const towerLayer = document.getElementById("towers");
 export const spawnLayer = document.getElementById("spawns");
 export const paletteEl = document.getElementById("palette");

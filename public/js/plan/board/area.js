@@ -11,7 +11,8 @@ import {
 import { say } from "../chrome.js";
 import { GRID_CELL_M } from "../coords.js";
 import { SVG_NS, areaLayer, board, narrowQuery, readoutEl, zoneCountsEl } from "../dom.js";
-import { DEFAULT_MODE, state } from "../state.js";
+import { dropDone, record, recordReplay } from "../history.js";
+import { DEFAULT_MODE, history, state } from "../state.js";
 import { movedBeyond, tapSlop } from "../util.js";
 import { clearPick, setZonePanelOpen } from "./drawers.js";
 import { setMode } from "./tools.js";
@@ -243,40 +244,53 @@ export function endPaint(p, evt) {
   const op = state.zoneErase ? "sub"
     : moved ? "add"
       : hasCell(state.areaSets, kind, rect[0], rect[1], areaGrid()) ? "sub" : "add";
-  commitArea(kind, op, rect);
+  commitArea(kind, op, [rect]);
 }
 
 /**
  * ひと塗りを1行として保存する。楽観更新で、断られたら取り除いて理由を出す
- * （配置・地名とまったく同じ流れ）。
+ * （配置・地名とまったく同じ流れ）。**塗る経路とやり直しの経路が共有する実体。**
+ *
+ * `rects` が複数になりうるのはやり直しのときだけ（1ジェスチャは常に矩形1つだが、
+ * 保存した行をそのまま作り直すので、行が持っている形に合わせる）。
+ * `cellM` も行から来る（いまは 1km 固定だが、保存した値を書き換えない）。
+ *
+ * 戻り値は作った行、保存できなければ null。
  */
-async function commitArea(kind, op, rect) {
+export async function commitArea(kind, op, rects, { replay = false, cellM = GRID_CELL_M } = {}) {
   const row = {
-    id: null, kind, op, cell_m: GRID_CELL_M, rects: [rect],
+    id: null, kind, op, cell_m: cellM, rects: rects.map((r) => [...r]),
     created_by: state.me.user.id,
   };
   state.areas.push(row);
   refreshAreas();
   // 取り消しの台帳に、線・配置・地名と同じ列へ操作した順で載せる。
   const entry = { area: row };
-  state.mine.push(entry);
+  if (replay) recordReplay(history(), entry);
+  else record(history(), entry);
 
-  const { cells } = rectSize(rect);
   row.saving = postAreas(state.plan.session.id, [{
     client_uuid: crypto.randomUUID(),
-    kind, op, cell_m: GRID_CELL_M, rects: [rect],
+    kind, op, cell_m: cellM, rects: row.rects,
   }]).then((res) => { row.id = res.ids[0]; return res.ids[0]; });
 
   try {
     await row.saving;
     // 保存を待つ間に取り消されていたら、その結果の表示を上書きしない。
-    if (!state.areas.includes(row)) return;
-    say(op === "sub"
-      ? `${areaLabel(kind)} を ${cells}マス 消しました。`
-      : `${areaLabel(kind)} を ${cells}マス 塗りました。`);
+    if (!state.areas.includes(row)) return null;
+    if (!replay) {
+      const { cells } = rectSize(row.rects[0]);
+      say(op === "sub"
+        ? `${areaLabel(kind)} を ${cells}マス 消しました。`
+        : `${areaLabel(kind)} を ${cells}マス 塗りました。`);
+    }
+    return row;
   } catch (e) {
     removeArea(row);
-    say(`${op === "sub" ? "消せませんでした" : "塗れませんでした"}。${e.message}`, true);
+    if (!replay) {
+      say(`${op === "sub" ? "消せませんでした" : "塗れませんでした"}。${e.message}`, true);
+    }
+    return null;
   }
 }
 
@@ -284,12 +298,14 @@ function removeArea(row) {
   const i = state.areas.indexOf(row);
   if (i !== -1) state.areas.splice(i, 1);
   // 取り消しの台帳からも外す。残すと、消えたものをもう一度消しにいく。
-  const j = state.mine.findIndex((e) => e.area === row);
-  if (j !== -1) state.mine.splice(j, 1);
+  dropDone(history(), (e) => e.area === row);
   refreshAreas();
 }
 
-/** 直前のひと塗りを取り消す（配置・地名の取り消しとまったく同じ流れ）。 */
+/**
+ * 直前のひと塗りを取り消す（配置・地名の取り消しとまったく同じ流れ）。
+ * **戻せたら true。** 台帳の出し入れは呼ぶ側（board/history.js）がする。
+ */
 export async function undoArea(entry) {
   const row = entry.area;
   let id;
@@ -299,15 +315,16 @@ export async function undoArea(entry) {
     // 保存自体が失敗していた行。もう画面に無いので取り消しは済んだ扱い。
     removeArea(row);
     say("取り消しました。");
-    return;
+    return true;
   }
 
   try {
     await deleteArea(state.plan.session.id, id);
     removeArea(row);
     say("取り消しました。");
+    return true;
   } catch (e) {
-    state.mine.push(entry);
     say(`取り消せませんでした。${e.message}`, true);
+    return false;
   }
 }

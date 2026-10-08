@@ -9,8 +9,11 @@
 import { test, expect } from "@playwright/test";
 
 import {
-  boardPoint, createPlan, loginViaApi, planUrl, showWholeMap, usePen,
+  boardPoint, createPlan, loginViaApi, planUrl, settleView, showWholeMap, usePen,
 } from "./plan-helpers.js";
+// 名前を出す視野の境目は towers.js が持っている。テストに 2000 を書き写すと、
+// 片方だけ直したときに静かに食い違う。
+import { TOWER_NAME_VIEW_M } from "../public/js/plan/towers.js";
 
 /** 調査 §4.1 の本数。マップの性質なので、ここに並べて持つ。 */
 const TOWER_COUNT = { bakurani: 5, ozeti: 4, zestafona: 3 };
@@ -63,14 +66,19 @@ test.describe("ドリルタワー", () => {
     await openPlan(page, context, "9502", "towers-name");
     await expect(page.locator("#towers .tw")).toHaveCount(5);
 
-    // 「拡大」1回で 1/1.6 倍。2000m を切るまで押す。
-    for (let i = 0; i < 8; i += 1) {
-      const w = await page
-        .locator("#board")
-        .evaluate((el) => Number(el.getAttribute("viewBox").split(" ")[2]));
-      if (w <= 2000) break;
+    // 「拡大」1回で 1/1.6 倍。名前が出る 2000m を切るまで押す。
+    //
+    // **1回ごとに補間が終わるのを待つ**（`settleView`）。待たずに続けて押すと、
+    // `animateTo` が動いている途中の viewBox を起点に倍率を掛け直すので
+    // **縮尺が目減りして、8回押しても 2000m を切らないことがある**
+    // （実測で 676m のはずが 1150m。負荷が高いほど悪くなり、公開側の
+    //   全件実行でこの1本が落ちた。数値は plan-helpers.js の `settleView`）。
+    for (let i = 0; i < 10; i += 1) {
+      if ((await settleView(page)) <= TOWER_NAME_VIEW_M) break;
       await page.getByRole("button", { name: "拡大" }).click();
     }
+    // 押し切ったあとも落ち着かせてから見る（最後の1回ぶんの補間が残っている）。
+    expect(await settleView(page)).toBeLessThanOrEqual(TOWER_NAME_VIEW_M);
     await expect(page.locator("#towers")).toHaveAttribute("data-names", "on");
     await expect(page.locator("#towers .tw-name").first()).toHaveText(/^Tower \d$/);
   });

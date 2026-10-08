@@ -517,6 +517,39 @@ main{ flex:1; min-height:0; position:relative; display:flex; }
 /* cursor は変えない（= 掴めるままに見せる）。同じ物を2人が触ったときは
    手元の操作が勝つので（board/carry.js）、掴めないように見せるのは嘘になる。 */
 
+/* ── 範囲選択（「選択」の道具）───────────────────────────────
+   枠で囲ってまとめて消す・まとめて動かす（D-062 のオーナー要望）。
+
+   **エリアのプレビュー（#areas .area-preview）と見分けがつくこと。**
+   同じ見た目だと「1km マスを塗ろうとしている」に見える。分けたのは2つの軸:
+
+   |            | エリアのプレビュー | 範囲選択の枠 |
+   |------------|--------------------|--------------|
+   | 線         | **破線**（6 4）    | **実線**     |
+   | 面         | 18%                | **6%**       |
+
+   どちらも青なのは、どちらも「これから効く範囲」を指すから。色を1つ増やすより
+   線と面で分けるほうが、この画面の約束（§1 色だけに頼らない）に合う。
+   枠は選ぶ対象より上の層（#select-band）にいて、**押せない**。 */
+#select-band{ pointer-events:none; }
+#select-band .band{
+  fill:var(--blue-bright); fill-opacity:.06;
+  stroke:var(--blue-bright); stroke-width:1.5;
+  vector-effect:non-scaling-stroke;
+}
+/* 枠で選んだもの。**新しい見た目の語彙を足さない** — 1件の選択（.sel）と
+   同じ青いハローを当て、他人のものだけ薄くして「対象外」を出す。
+
+   薄さの値は §3 の「無効」と同じ .45（押せないものの濃さを2種類作らない）。
+   **薄さだけに頼っていない** — 件数の内訳（「7件を選択（うち自分のもの 4件）」）が
+   検視台に出ているので、色が見えない人にも伝わる。 */
+#placements .pm[data-picked] .pm-halo{ stroke:var(--blue); stroke-width:8; stroke-opacity:1; }
+#callouts .co[data-picked] .co-halo{ stroke:var(--blue); stroke-width:7; stroke-opacity:1; }
+#placements .pm[data-picked="other"], #callouts .co[data-picked="other"]{ opacity:.45; }
+/* 名前と注記は、選んでいる間は出す（何を選んだのか読めないと確かめられない）。 */
+#placements .pm[data-picked] .pm-label{ display:block; }
+#callouts[data-names="off"] .co[data-picked] .co-name{ display:block; }
+
 /* ── 他の人のカーソル（Phase R1）─────────────────────────────
    「同時に同じ画面を見ながら」の本体。VC で「ここ」と言ったときに、
    相手の画面でも同じ地点が指されている状態を作る。
