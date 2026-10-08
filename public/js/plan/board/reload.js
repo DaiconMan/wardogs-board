@@ -12,7 +12,7 @@
 // いつ走らせるかは changes.js が決める（300ms デバウンス、操作中は保留）。
 // ここは「走らせると決まったときに何をするか」だけ。
 
-import { getCallouts, getPlacements, getPlan } from "../api.js";
+import { getCallouts, getPlacements, getPlan, getStamps } from "../api.js";
 import { inkLayer } from "../dom.js";
 import { renderStroke } from "../render.js";
 import { state } from "../state.js";
@@ -21,6 +21,7 @@ import { showCallouts } from "./callout.js";
 import { refreshDetail, renderDetail } from "./detail.js";
 import { settleLive } from "./live.js";
 import { showPlacements } from "./place.js";
+import { showStamps } from "./stamp.js";
 
 /**
  * 保存の途中のものが1つでもあるか。
@@ -36,6 +37,7 @@ import { showPlacements } from "./place.js";
 export const hasPendingSave = () =>
   state.placements.some((p) => p.id === null)
   || state.callouts.some((c) => c.id === null)
+  || state.stamps.some((s) => s.id === null)
   || state.areas.some((a) => a.id === null || a.id === undefined)
   || state.mine.some((e) => e.path && !e.path.dataset.strokeId);
 
@@ -53,6 +55,7 @@ export const hasPendingSave = () =>
  */
 export function boardBusy(active = document.activeElement) {
   if (state.drag || state.drawing || state.paint || state.pan || state.pinch) return true;
+  if (state.stampDraw) return true;
   if (state.bandDrag || state.band || state.bulk) return true;
   if (state.pointers.size > 0) return true;
   if (active && /^(input|textarea|select)$/i.test(active.tagName)) return true;
@@ -90,10 +93,11 @@ export async function reloadBoard() {
 }
 
 async function applyBoard(id) {
-  const [plan, placements, callouts] = await Promise.all([
+  const [plan, placements, callouts, stamps] = await Promise.all([
     getPlan(id),
     getPlacements(id),
     getCallouts(id),
+    getStamps(id),
   ]);
 
   // 線も id で突き合わせる。**作り直さない。**
@@ -125,6 +129,9 @@ async function applyBoard(id) {
 
   showPlacements(placements.placements);
   showCallouts(callouts.callouts);
+  // **定義は入れ直さない**（棚を組み直すとスクロール位置と開閉が飛ぶ。
+  // 組み込みは増えないので、取り直しで変わるのは置いたもののほうだけ）。
+  showStamps(stamps.stamps);
 
   // 開いている詳細パネルを今の値に合わせる（他の人が動かした座標など）。
   // **取り直しのときだけ。** 初回の読み込みでやると、置いた直後の注記の欄から
@@ -132,6 +139,7 @@ async function applyBoard(id) {
   // ここへ来る時点で欄に入力中でないことは `boardBusy()` が保証している。
   if (state.selected) refreshDetail(state.selected);
   else if (state.selectedCallout) refreshDetail(state.selectedCallout);
+  else if (state.selectedStamp) refreshDetail(state.selectedStamp);
   // 範囲選択の件数も出し直す。他の人が選択の中の物を消していれば
   // `dropPicked` が列から外しているので、出している数が古いままになる。
   else if (state.picked) renderDetail();

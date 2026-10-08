@@ -133,6 +133,26 @@ describe("戻すときに取る写し（やり直すのに必要な中身）", (
     });
   });
 
+  it("スタンプは定義の id・座標・注記を持つ", () => {
+    const st = { stamp_id: 15, x_m: 100, y_m: 200, x2_m: null, y2_m: null, note: "ここに装甲" };
+    expect(snapshotOf({ stamp: st })).toEqual({
+      kind: "stamp", stamp_id: 15, x_m: 100, y_m: 200, x2_m: null, y2_m: null, note: "ここに装甲",
+    });
+  });
+
+  it("**向きを持つスタンプは終点も写す**（落とすと向きが消える）", () => {
+    const st = { stamp_id: 4, x_m: 10, y_m: 20, x2_m: 30, y2_m: 40 };
+    expect(snapshotOf({ stamp: st })).toEqual({
+      kind: "stamp", stamp_id: 4, x_m: 10, y_m: 20, x2_m: 30, y2_m: 40, note: null,
+    });
+  });
+
+  it("スタンプの終点と注記は、無いときは null で揃える", () => {
+    expect(snapshotOf({ stamp: { stamp_id: 1, x_m: 1, y_m: 2 } })).toEqual({
+      kind: "stamp", stamp_id: 1, x_m: 1, y_m: 2, x2_m: null, y2_m: null, note: null,
+    });
+  });
+
   it("線は色・太さ・点の列を持つ", () => {
     const ink = { color: "cursor-3", width: 2, points: [{ x_m: 1, y_m: 2 }, { x_m: 3, y_m: 4 }] };
     expect(snapshotOf({ ink })).toEqual({

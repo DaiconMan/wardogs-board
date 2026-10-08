@@ -20,6 +20,7 @@ import { drawBounds, drawGrid } from "./board/grid.js";
 import { syncHistoryButtons } from "./board/history.js";
 import { setLiveReloadPending } from "./board/live.js";
 import { loadPlacements } from "./board/place.js";
+import { loadStamps } from "./board/stamp.js";
 import { wireBoard, wireKeys } from "./board/pointer.js";
 import { boardBusy, reloadBoard } from "./board/reload.js";
 import { wireTools } from "./board/tools.js";
@@ -222,7 +223,9 @@ async function main() {
   const before = statusEl.textContent;
   const placementsOk = await loadPlacements();
   const calloutsOk = await loadCallouts();
-  if (placementsOk && calloutsOk && statusEl.textContent === before) say("");
+  // スタンプは定義（何があるか）と置いたものを1往復で取る（board/stamp.js の注記）。
+  const stampsOk = await loadStamps();
+  if (placementsOk && calloutsOk && stampsOk && statusEl.textContent === before) say("");
 
   // **道具が全部止まっている理由を、止まっている画面に書く。**
   // ヘッダの「見るだけ」の札だけでは、それが公開設定のせいなのか

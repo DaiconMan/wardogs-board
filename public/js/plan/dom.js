@@ -19,6 +19,9 @@ export const rangeLayer = document.getElementById("ranges");
 // （これは射程ではなく、人数が2倍に数えられる範囲）。
 export const hotzoneLayer = document.getElementById("hotzones");
 export const placeLayer = document.getElementById("placements");
+// スタンプ（図形・向きを持つ印・軍用記号）と、引いている最中のプレビュー。
+export const stampLayer = document.getElementById("stamps");
+export const stampDraftLayer = document.getElementById("stamp-draft");
 export const calloutLayer = document.getElementById("callouts");
 // 他の人のカーソル。**マップ座標系に置く**ので、パンとズームに自動で追従する。
 export const cursorLayer = document.getElementById("cursor-layer");
@@ -26,6 +29,7 @@ export const bandLayer = document.getElementById("select-band");
 export const towerLayer = document.getElementById("towers");
 export const spawnLayer = document.getElementById("spawns");
 export const paletteEl = document.getElementById("palette");
+export const stampPanelEl = document.getElementById("stamppanel");
 export const detailEl = document.getElementById("placement-detail");
 export const gridLayer = document.getElementById("grid");
 export const fineLayer = document.getElementById("grid-fine");

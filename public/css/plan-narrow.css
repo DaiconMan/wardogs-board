@@ -103,7 +103,7 @@
   /* 狭い画面では引き出しが盤面をほぼ覆ってしまうので、高さを抑える
      （畳んだ状態なら3行なので、これでも中身は全部見える）。
      項目を選んだ時点で app.js が畳む（置きたい場所を自分で隠さない）。 */
-  #palette, #zonepanel{ left:6px; right:6px; width:auto; }
+  #palette, #zonepanel, #stamppanel{ left:6px; right:6px; width:auto; }
   /* **引き出しと検視台で画面を半分ずつ使う。** 枠が浮いたぶん、どちらも
      上下に伸びやすくなって重なった（実機で「車輌」の見出しが詳細パネルに
      隠れて押せなくなった）。境目を 48% / 52% で決め打ちにして、両方開いても
@@ -115,6 +115,10 @@
      最後の集計の行が途中で切れて「壊れている」ように見えるので、収まる高さまで許す。 */
   body[data-page="board"] #zonepanel{
     top:calc(var(--chrome-top, 56px) + 6px); bottom:auto; max-height:70%;
+  }
+  /* スタンプの棚はパレットと同じ扱い（格子に並ぶので縦に長くなりやすい）。 */
+  body[data-page="board"] #stamppanel{
+    top:calc(var(--chrome-top, 56px) + 6px); bottom:48%; max-height:none;
   }
   /* 詳細は下から出すシート。棚の上で止める（棚と重ねない）。 */
   #placement-detail{ left:6px; right:6px; width:auto; }

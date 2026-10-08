@@ -7,8 +7,8 @@ import { deleteInk, postInk } from "../api.js";
 import { areaLabel } from "../areas.js";
 import { closeViewMenu, say, wireMenu } from "../chrome.js";
 import {
-  accountMenu, board, darkQuery, inkLayer, paletteEl, viewMenu, visibilityMenu,
-  widthsEl, zonePanelEl,
+  accountMenu, board, darkQuery, inkLayer, paletteEl, stampPanelEl, viewMenu,
+  visibilityMenu, widthsEl, zonePanelEl,
 } from "../dom.js";
 import { dropDone, record, recordReplay } from "../history.js";
 import { encodePoints, simplify, toSmoothPath } from "../ink.js";
@@ -18,11 +18,12 @@ import { clearZoneKind, setAreasVisible, setZoneKind } from "./area.js";
 import { applyBasemapMode, loadBasemapMode, setBasemapMode } from "./basemap.js";
 import { setCalloutMode, setCalloutsVisible } from "./callout.js";
 import { beginInk, endInk, extendInk } from "./cursor.js";
-import { clearPick, setPaletteOpen, setZonePanelOpen } from "./drawers.js";
+import { clearPick, setPaletteOpen, setStampPanelOpen, setZonePanelOpen } from "./drawers.js";
 import { setSpawnsVisible, setTowersVisible } from "./fixtures.js";
 import { wireHistory } from "./history.js";
 import { clearPicked } from "./marquee.js";
 import { setRangesVisible } from "./place.js";
+import { clearStampPick, setStampsVisible } from "./stamp.js";
 import {
   ZOOM_BUTTON_FACTOR, clampToMap, insideMap, pointerToMeters, showAll, zoomByButton,
 } from "./view.js";
@@ -267,6 +268,8 @@ export function wireTools() {
       // （押した道具と盤面の挙動を一致させる）。
       clearPick();
       clearZoneKind();
+      // スタンプの選択も外す（押した道具と盤面の挙動を一致させる）。
+      clearStampPick();
       // 範囲選択も外す。選んだまま別の道具に移ると、画面に選択の印が残ったまま
       // それに効かない操作をすることになる（仕様 §2 の「解除」の3つ目）。
       if (value !== "select") clearPicked();
@@ -313,6 +316,15 @@ export function wireTools() {
   paletteBtn.addEventListener("click", () => {
     setPaletteOpen(paletteEl?.hidden !== false, true);
   });
+  // スタンプの棚（左の引き出し3枚目）と、表示の on/off。
+  document.getElementById("toggle-stamp-panel")?.addEventListener("click", () => {
+    setStampPanelOpen(stampPanelEl?.hidden !== false);
+  });
+  document.getElementById("toggle-stamps")?.addEventListener("click", () => {
+    setStampsVisible(!state.showStamps);
+  });
+  setStampsVisible(state.showStamps);
+
   const rangesBtn = document.getElementById("toggle-ranges");
   rangesBtn.addEventListener("click", () => setRangesVisible(!state.showRanges));
   setRangesVisible(state.showRanges);

@@ -5,7 +5,7 @@
 // ── このファイルが落とせない2点 ───────────────────────────────────
 //
 // **1. 書き込みが全ルートで弾かれること。**
-//    placements / ink / areas / callouts / zone を**総当たり**で確かめる
+//    placements / ink / areas / callouts / stamps / zone を**総当たり**で確かめる
 //    （メソッドまで数えると10本以上ある）。D-070 で `canWrite` の門を1関数に
 //    まとめたので、ゲストはその**手前**で落ちる＝読み取りのルートだけを
 //    `requireViewer` に替えるのが正。1本間違えると身元の無い書き込みが通る。
@@ -81,7 +81,7 @@ const countOf = (table) => Number(scalar(`SELECT COUNT(*) AS n FROM ${table}`));
 let uuidSeq = 0;
 const uuid = () => `guest-${Date.now().toString(36)}-${(uuidSeq += 1)}`;
 
-// ── 書き込む経路。**5種類すべて、メソッドまで総当たり。**──────────────
+// ── 書き込む経路。**6種類すべて、メソッドまで総当たり。**──────────────
 //
 // `plan-visibility.test.js` の表と同じ形にしてある（あちらは公開設定、
 // こちらは身元）。**片方だけに経路を足せる形にしないこと。**
@@ -155,6 +155,26 @@ const WRITE_ROUTES = [
     }),
   },
   {
+    label: "stamps POST",
+    call: (headers, id) => fetch(url(`/api/sessions/${id}/stamps`), {
+      method: "POST", headers,
+      // stamp_id 1 は組み込みの「四角」（schema.sql の種まき）。
+      body: JSON.stringify({ stamps: [{ client_uuid: uuid(), stamp_id: 1, x_m: 2500, y_m: 2500 }] }),
+    }),
+  },
+  {
+    label: "stamps PATCH",
+    call: (headers, id, rows) => fetch(url(`/api/sessions/${id}/stamps?id=${rows.stamps}`), {
+      method: "PATCH", headers, body: JSON.stringify({ x_m: 2600, y_m: 2600 }),
+    }),
+  },
+  {
+    label: "stamps DELETE",
+    call: (headers, id, rows) => fetch(url(`/api/sessions/${id}/stamps?id=${rows.stamps}`), {
+      method: "DELETE", headers,
+    }),
+  },
+  {
     label: "zone PUT",
     call: (headers, id) => fetch(url(`/api/sessions/${id}/zone`), {
       method: "PUT", headers, body: JSON.stringify({ preset_id: PRESET_ID }),
@@ -214,6 +234,9 @@ async function seedRows(cookie, sessionId) {
   rows.callouts = await make("callouts", {
     callouts: [{ client_uuid: uuid(), name: "見張りの丘", x_m: 4000, y_m: 4000 }],
   });
+  rows.stamps = await make("stamps", {
+    stamps: [{ client_uuid: uuid(), stamp_id: 1, x_m: 5000, y_m: 5000 }],
+  });
   return rows;
 }
 
@@ -235,7 +258,7 @@ describe("条件1: URL を知っている作戦を、ログイン無しで開け
     expect(Array.isArray(body.zone_presets), "ゾーンのプリセットが読める").toBe(true);
   });
 
-  it("placements / callouts / catalog / maps / zone-presets も読める", async () => {
+  it("placements / callouts / stamps / catalog / maps / zone-presets も読める", async () => {
     const owner = await loginAs("7201", "guestowner2");
     const session = await newSession(owner.cookie, "ゲストが読む枝葉");
     await seedRows(owner.cookie, session.id);
@@ -244,6 +267,7 @@ describe("条件1: URL を知っている作戦を、ログイン無しで開け
     const paths = [
       `/api/sessions/${session.id}/placements`,
       `/api/sessions/${session.id}/callouts`,
+      `/api/sessions/${session.id}/stamps`,
       "/api/catalog",
       "/api/maps",
       "/api/maps/bakurani/zone-presets",
@@ -309,6 +333,7 @@ describe("条件4: 書き込みが全部弾かれる（総当たり）", () => {
       ink_strokes: countOf("ink_strokes"),
       session_areas: countOf("session_areas"),
       session_callouts: countOf("session_callouts"),
+      plan_stamps: countOf("plan_stamps"),
       sessions: countOf("sessions"),
     };
     for (const route of WRITE_ROUTES) {

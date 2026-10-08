@@ -714,3 +714,88 @@ main{ flex:1; min-height:0; position:relative; display:flex; }
   user-select:none; -webkit-user-select:none;
 }
 
+
+/* ── スタンプ（#stamps）────────────────────────────────────
+   D-062 のオーナー要望: 「四角とか、丸、などスタンプほしいですね」
+   「スタンプは、凸型の敵とか見方を示すものもあっていいし」「軍用記号です」。
+
+   **色は陣営、形は陣営の枠（APP-6）、中の字は兵種。** 新しい色は足さず、
+   既存トークン（--blue / --red / --hot / --muted）を配り直すだけで済ませる。
+   配り方は stamps 表の `color` 列で、ここではその名前を変数に移す。
+
+   **点のものは画面上で一定の大きさ**（配置マーカーと同じ逆スケール。条件9）。
+   **向きを持つものは線だけマップ座標**で、長さと向きがそのまま意味になる。 */
+#stamps .st{ cursor:pointer; --st:var(--muted); }
+#stamps .st[data-color="blue"]{ --st:var(--blue); }
+#stamps .st[data-color="red"]{ --st:var(--red); }
+#stamps .st[data-color="hot"]{ --st:var(--hot); }
+#stamps .st[data-color="green"]{ --st:var(--green); }
+#stamps .st[data-color="muted"]{ --st:var(--muted); }
+
+/* 背景から浮かせるハロー（配置マーカーと同じ理由・同じ値）。
+   下敷きなので当たり判定には出さない。 */
+#stamps .st-halo, #stamp-draft .st-halo{
+  fill:none; stroke:var(--panel); stroke-width:6; stroke-opacity:.9;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke; pointer-events:none;
+}
+#stamps .st-shape, #stamp-draft .st-shape{
+  fill:var(--st); stroke:var(--ink); stroke-width:1.5;
+  stroke-linejoin:round; vector-effect:non-scaling-stroke;
+}
+#stamps .st:hover .st-shape, #stamps .st.sel .st-shape{ stroke-width:3; }
+
+/* 枠の中に入れる兵種の1文字。載る面（--blue / --red / --hot / --muted）は
+   どちらの配色でも中〜明なので、ダークで --ink（ほぼ白）にすると消える。
+   #placements .pm-glyph と同じ手当てを同じ値で当てる。 */
+#stamps .st-glyph{
+  font-size:var(--t-eyebrow); font-weight:700; fill:var(--ink);
+  pointer-events:none; user-select:none; -webkit-user-select:none;
+}
+@media (prefers-color-scheme: dark){
+  #stamps .st-glyph{ fill:var(--paper); }
+}
+
+/* 向きを持つスタンプ（矢印・線）。
+   **太さは画面基準**（non-scaling-stroke）。実寸にすると、全体表示では
+   髪の毛より細くなって見えず、寄ると道路より太くなる。
+   掴みどころ（.st-hit）は透明な太い線。細い線は指で掴めない。 */
+#stamps .st-line-halo, #stamp-draft .st-line-halo{
+  stroke:var(--panel); stroke-width:8; stroke-opacity:.9;
+  stroke-linecap:round; vector-effect:non-scaling-stroke; pointer-events:none;
+}
+#stamps .st-line, #stamp-draft .st-line{
+  stroke:var(--st); stroke-width:3.5;
+  stroke-linecap:round; vector-effect:non-scaling-stroke; pointer-events:none;
+}
+#stamps .st-hit{
+  stroke:transparent; stroke-width:16; stroke-linecap:round;
+  vector-effect:non-scaling-stroke;
+}
+#stamps .st:hover .st-line, #stamps .st.sel .st-line{ stroke-width:5; }
+
+/* 引いている最中のプレビュー。**破線にして「まだ確定していない」を出す**
+   （エリアのプレビューと同じ約束）。押せない。 */
+#stamp-draft{ pointer-events:none; }
+#stamp-draft .st-line{ stroke-dasharray:10 7; }
+
+/* 注記。配置の .pm-label と同じ作法で、書いてあるときだけ常時出す。 */
+#stamps .st-note{
+  font-size:var(--t-micro); font-weight:700; fill:var(--ink);
+  paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-opacity:.92;
+  stroke-linejoin:round;
+  pointer-events:none;
+  display:none;
+}
+#stamps .st[data-note] .st-note, #stamps .st:hover .st-note,
+#stamps .st.sel .st-note, #stamps .st[data-picked] .st-note{ display:block; }
+
+/* 選択中・運ばれている最中・枠で選んだとき。**配置と同じ語彙をそのまま使う**
+   （新しい見た目を足さない。§18）。線のものはハローの線を青/運搬色に変える。 */
+#stamps .st.sel .st-halo{ stroke:var(--blue); stroke-width:8; stroke-opacity:1; }
+#stamps .st.sel .st-line-halo{ stroke:var(--blue); stroke-width:10; stroke-opacity:1; }
+#stamps .st[data-picked] .st-halo{ stroke:var(--blue); stroke-width:8; stroke-opacity:1; }
+#stamps .st[data-picked] .st-line-halo{ stroke:var(--blue); stroke-width:10; stroke-opacity:1; }
+#stamps .st[data-picked="other"]{ opacity:.45; }
+#stamps .st[data-carry] .st-halo{ stroke:var(--carry); stroke-width:8; stroke-opacity:1; }
+#stamps .st[data-carry] .st-line-halo{ stroke:var(--carry); stroke-width:10; stroke-opacity:1; }
+#stamps .st[data-carry]{ transition:transform var(--cursor-tween, 100ms) linear; }

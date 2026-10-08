@@ -59,6 +59,7 @@ npx wrangler d1 execute wardogs-blue --remote --file=migrations/2026-09-28-add-p
 | `2026-09-29-add-callout-updated-at.sql` | `callouts.updated_at`（地名マスタの更新時刻）を追加 |
 | `2026-09-29-fix-map-dimensions.sql` | `maps` の一辺を 16,000m → 16,320 / 16,320 / 16,384m に訂正（出典・調査日も更新） |
 | `2026-10-02-add-session-visibility.sql` | `sessions.visibility`（作戦ごとの公開設定 private / public / public_edit）と `(visibility, updated_at DESC)` の索引を追加 |
+| `2026-10-08-add-plan-stamps-uuid.sql` | `plan_stamps.client_uuid`（再送で二重に増えないための鍵）と `(session_id, client_uuid)` の UNIQUE 索引を追加 |
 
 ### 列を足さない UPDATE の migration もある
 

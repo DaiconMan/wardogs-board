@@ -123,7 +123,7 @@ public/js/plan/             ブラウザ側の ES モジュール 25本
 functions/_lib/             共通 7本（session / guard / validate / ink / zones /
                             guest / visibility）
 functions/api/sessions/     /api/sessions と、その下の
-                            ink / placements / areas / callouts / zone / ws
+                            ink / placements / areas / callouts / stamps / zone / ws
 functions/api/auth/         discord/start・discord/callback・logout
 functions/api/me/           /api/me（ログイン状態・ゲスト名・訪問履歴）
 functions/api/catalog.js    建造物カタログ
@@ -134,9 +134,9 @@ workers/room/               共有カーソルを中継する Durable Object 用
   src/presence.js             在室管理の純粋ロジック
   src/cursors.js              カーソルのレート制御・直列化の純粋ロジック
 
-schema.sql                  D1 のテーブル定義。**冪等**（CREATE TABLE IF NOT EXISTS 23 /
-                            CREATE INDEX IF NOT EXISTS 20 / INSERT OR IGNORE 11 だけ）
-migrations/                 既にある DB に1回だけ流す差分 SQL 4本（新規なら不要）
+schema.sql                  D1 のテーブル定義。**冪等**（CREATE TABLE / CREATE [UNIQUE] INDEX の
+                            IF NOT EXISTS と、INSERT OR IGNORE だけ。何度流しても増えない）
+migrations/                 既にある DB に1回だけ流す差分 SQL 5本（新規なら不要）
 wrangler.toml               Pages 設定（**自分の値を入れる場所が2つある**）
 tools/                      運用・検証スクリプト6本
   dev.mjs                     npm run dev（room 8787 と pages 8788 を同時に立てる）
@@ -145,11 +145,11 @@ tools/                      運用・検証スクリプト6本
   ws-min.mjs                  最小の WebSocket クライアント（テストが使う）
   ws-load.mjs                 接続を維持して無料枠の消費を実測する
   ws-fanout.mjs               設計上限（毎秒200通）を流して配信を測る
-tests/                      vitest（*.test.js 47ファイル）。**全部が統合テストではない**
+tests/                      vitest（*.test.js 49ファイル）。**全部が統合テストではない**
                             （coords / ink-codec / zones-geom / cursor-budget /
                             room-* などはサーバを立てずに動く）
-e2e/                        Playwright（*.spec.js 24ファイル。npm run test:ui が走らせるのは
-                            shots.spec.js を除いた 23ファイル）
+e2e/                        Playwright（*.spec.js 27ファイル。npm run test:ui が走らせるのは
+                            shots.spec.js を除いた 26ファイル）
 testlib/d1-direct.js        tests/ と e2e/ が共用する D1 の直接オープン
 docs/design-system.md       画面の型。**UI を触るなら読んでください**
 LICENSE                     MIT
@@ -373,8 +373,8 @@ npm run dev                           # room（8787）と pages（8788）を両�
 ## テスト
 
 ```bash
-npm test        # vitest（*.test.js 47ファイル）
-npm run test:ui # Playwright の UIテスト（23ファイル。shots.spec.js は除く）
+npm test        # vitest（*.test.js 49ファイル）
+npm run test:ui # Playwright の UIテスト（26ファイル。shots.spec.js は除く）
 npm run shots   # 目視確認用のスクリーンショットを shots/ に再生成（git 管理外）
 ```
 

@@ -2,8 +2,9 @@
 //
 // 読む所（カタログの値）と書く所（自分たちの判断）を分けて、書く所を先に出す。
 
-import { deleteCallout, deletePlacement, patchCallout, patchPlacement } from "../api.js";
+import { deleteCallout, deletePlacement, deleteStamp, patchCallout, patchPlacement } from "../api.js";
 import { NAME_MAX_LEN } from "../callouts.js";
+import { NOTE_MAX_LEN, isVector, stampSide } from "../stamps.js";
 import { createChoice } from "../choice.js";
 import { say } from "../chrome.js";
 import { detailEl } from "../dom.js";
@@ -16,6 +17,9 @@ import { clearChildren } from "../render.js";
 import { canEdit, state } from "../state.js";
 import { WRITE_DENIED } from "../visibility.js";
 import { applyCalloutName, calloutId, removeCallout, selectCallout } from "./callout.js";
+import {
+  applyStampNote, defOf, removeStamp, saveStampAt, selectStamp, stampId,
+} from "./stamp.js";
 import { clearPicked, deletePicked } from "./marquee.js";
 import {
   applyLabel, applyRank, placementId, removePlacement, selectPlacement,
@@ -43,7 +47,9 @@ function fieldLabel(id, text) {
  * 配置と地名のどちらでも同じ扱いにする（パネルは1枚を使い回している）。
  */
 export function refreshDetail(p) {
-  if (state.selected === p || state.selectedCallout === p) renderDetail();
+  if (state.selected === p || state.selectedCallout === p || state.selectedStamp === p) {
+    renderDetail();
+  }
 }
 
 /** 種別の日本語名。未知の kind が来ても生の値を出す（黙って隠さない）。 */
@@ -228,6 +234,7 @@ export function renderDetail() {
   // **範囲選択をいちばん先に見る**（まとめて選んだら1件の選択は外れている）。
   if (state.picked) { renderPickedDetail(state.picked); return; }
   if (state.selectedCallout) { renderCalloutDetail(state.selectedCallout); return; }
+  if (state.selectedStamp) { renderStampDetail(state.selectedStamp); return; }
   const p = state.selected;
   if (!p) { detailEl.hidden = true; clearChildren(detailEl); return; }
 
@@ -553,6 +560,167 @@ async function deleteSelectedCallout(button) {
     say(
       e.status === 403
         ? "他の人の地名は消せません。消せるのは置いた本人と管理者だけです。"
+        : `消せませんでした。${e.message}`,
+      true
+    );
+    button.disabled = false;
+  }
+}
+
+
+// ── 選んだスタンプの詳細 ───────────────────────────────────
+// 配置・地名と同じパネルを使い回す（選べるのは一度に1つだけ）。
+//
+// 出すのは「何のスタンプか」「位置」「注記」「消す」。カタログも出典も無く、
+// 値はすべてこちらが決めたものなので、読む所と書く所を分ける必要がない
+// （地名の詳細と同じ形）。
+
+/** 書けない理由。配置・地名の欄と同じ作法で、押す前に理由を見せる。 */
+const NO_STAMP_EDIT_TITLE = "他の人のスタンプは直せません";
+
+function renderStampDetail(s) {
+  const def = defOf(s);
+  const editable = canEditHere(s);
+  clearChildren(detailEl);
+
+  const head = document.createElement("div");
+  head.className = "head";
+  const h2 = document.createElement("h2");
+  h2.textContent = def ? def.label : "スタンプ";
+  head.appendChild(h2);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "close quiet";
+  close.textContent = "閉じる";
+  close.addEventListener("click", () => selectStamp(null));
+  head.appendChild(close);
+  detailEl.appendChild(head);
+
+  const dl = document.createElement("dl");
+  // 軍用記号のときだけ「外形が陣営、中の字が兵種」を言う（図形には陣営が無い）。
+  const side = def?.glyph ? stampSide(def) : null;
+  if (side) addRow(dl, "陣営", side);
+  const g = state.coords.toGame(s);
+  const cell = state.coords.cellOf(s);
+  addRow(dl, isVector(def) ? "始点" : "位置",
+    `x${g.x.toFixed(2)} y${g.y.toFixed(2)}${cell ? ` ${cell}` : ""}`, true);
+  if (isVector(def) && Number.isFinite(s.x2_m)) {
+    const g2 = state.coords.toGame({ x_m: s.x2_m, y_m: s.y2_m });
+    const cell2 = state.coords.cellOf({ x_m: s.x2_m, y_m: s.y2_m });
+    addRow(dl, "終点",
+      `x${g2.x.toFixed(2)} y${g2.y.toFixed(2)}${cell2 ? ` ${cell2}` : ""}`, true);
+  }
+  detailEl.appendChild(dl);
+
+  const box = document.createElement("div");
+  box.className = "edit";
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("label");
+  label.htmlFor = "stamp-note";
+  label.textContent = "注記";
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = "stamp-note";
+  // サーバ側の上限と同じ。緩めると入力できるのに保存で 400 になる欄ができる。
+  input.maxLength = NOTE_MAX_LEN;
+  input.placeholder = "道路経由だから取りづらい";
+  input.value = s.note ?? "";
+
+  const save = document.createElement("button");
+  save.type = "button";
+  save.id = "stamp-note-save";
+  save.textContent = "保存";
+
+  if (!editable) {
+    for (const el of [input, save]) {
+      el.disabled = true;
+      el.title = noEditTitle(NO_STAMP_EDIT_TITLE);
+    }
+  }
+
+  save.addEventListener("click", () => saveStampNote(s, input, save));
+  input.addEventListener("keydown", (evt) => {
+    if (evt.key !== "Enter" || evt.isComposing) return;
+    evt.preventDefault();
+    saveStampNote(s, input, save);
+  });
+
+  row.append(input, save);
+  field.append(label, row);
+  box.append(field);
+  detailEl.appendChild(box);
+
+  if (isVector(def)) {
+    const hint = document.createElement("p");
+    hint.className = "src";
+    hint.textContent = "掴んで動かすと、向きを保ったまま全体が移動します。";
+    detailEl.appendChild(hint);
+  }
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.id = "stamp-delete";
+  del.className = "quiet danger";
+  del.textContent = "このスタンプを消す";
+  if (!editable) {
+    del.disabled = true;
+    del.title = noEditTitle("他の人のスタンプは消せません");
+  }
+  del.addEventListener("click", () => deleteSelectedStamp(del));
+  detailEl.appendChild(del);
+
+  detailEl.hidden = false;
+}
+
+/** 注記を保存する。楽観更新で、断られたら元の文字へ戻す（配置の注記と同じ）。 */
+async function saveStampNote(s, input, button) {
+  const before = s.note ?? null;
+  const next = input.value.trim() || null;
+  if (next === before) { say("注記は変わっていません。"); return; }
+
+  button.disabled = true;
+  const id = await stampId(s);
+  if (id === null) return;
+
+  applyStampNote(s, next);
+  try {
+    await saveStampAt(id, { note: next });
+    say(next ? "注記を保存しました。" : "注記を消しました。");
+  } catch (e) {
+    applyStampNote(s, before);
+    input.value = before ?? "";
+    say(
+      e.status === 403
+        ? "他の人のスタンプには書けません。書けるのは置いた本人と管理者だけです。"
+        : `注記を保存できませんでした。${e.message}`,
+      true
+    );
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteSelectedStamp(button) {
+  const s = state.selectedStamp;
+  if (!s) return;
+  button.disabled = true;
+
+  const id = await stampId(s);
+  // 保存自体が失敗していたスタンプ。もう盤面に無いので消す操作は済んだ扱い。
+  if (id === null) return;
+
+  try {
+    await deleteStamp(state.plan.session.id, id);
+    removeStamp(s);
+    say("スタンプを消しました。");
+  } catch (e) {
+    say(
+      e.status === 403
+        ? "他の人のスタンプは消せません。消せるのは置いた本人と管理者だけです。"
         : `消せませんでした。${e.message}`,
       true
     );

@@ -177,3 +177,25 @@ export const patchCallout = (id, calloutId, patch) =>
   });
 export const deleteCallout = (id, calloutId) =>
   call(`${calloutPath(id)}?id=${calloutId}`, { method: "DELETE" });
+
+// スタンプ（図形・向きを持つ印・軍用記号）。
+//
+// **GET は定義（どんなスタンプがあるか）と置いたものを一緒に返す。**
+// 建造物はカタログ（/api/catalog）と配置が別の往復になっているが、スタンプの
+// 定義は 25 行しかなく、片方だけ取る用が無い（理由はサーバ側の冒頭に書いてある）。
+const stampPath = (id) => `/api/sessions/${encodeURIComponent(id)}/stamps`;
+export const getStamps = (id) => call(stampPath(id));
+export const postStamps = (id, stamps) =>
+  call(stampPath(id), {
+    method: "POST", headers: jsonHeaders, body: JSON.stringify({ stamps }),
+  });
+// 書いたキーだけが変わる:
+//   { x_m, y_m }               点を動かす（片方だけは不可）
+//   { x_m, y_m, x2_m, y2_m }   向きを持つものを動かす（**両端を一緒に**。v1 は平行移動だけ）
+//   { note }                   注記。null で消す
+export const patchStamp = (id, stampId, patch) =>
+  call(`${stampPath(id)}?id=${stampId}`, {
+    method: "PATCH", headers: jsonHeaders, body: JSON.stringify(patch),
+  });
+export const deleteStamp = (id, stampId) =>
+  call(`${stampPath(id)}?id=${stampId}`, { method: "DELETE" });

@@ -2,7 +2,7 @@
 //
 // パン・ドラッグでの移動・ピンチ・ホイール、そしてスペース / c / Esc。
 
-import { patchCallout, patchPlacement } from "../api.js";
+import { patchCallout, patchPlacement, patchStamp } from "../api.js";
 import { measureChrome, say, updateRailOverflow } from "../chrome.js";
 import { carryOf } from "../cursors.js";
 import { board, readoutEl } from "../dom.js";
@@ -20,6 +20,10 @@ import {
   deletePicked, endBand, endBandDrag, pickedHit,
 } from "./marquee.js";
 import { moveMarkerTo, placeAt, selectPlacement } from "./place.js";
+import {
+  beginStampDraw, cancelStampDraw, clearStampPick, endStampDraw, moveStampTo, placeStampAt,
+  selectStamp, stampDrawMove, stampInside, stampPatchBody,
+} from "./stamp.js";
 import {
   beginStroke, cancelStroke, eraseAt, extendStroke, finishStroke, setMode,
 } from "./tools.js";
@@ -81,7 +85,27 @@ const DRAGGABLE = {
     outside: "マップの外です。マップの上へ動かしてください。",
     moved: "地名を動かしました。",
   },
+  // スタンプだけ `body` と `inside` を持つ。**向きを持つものは両端が動く**ので、
+  // 「保存に送る値」と「マップの中か」が始点1点では決まらない
+  // （片側だけ送るとサーバが 400。board/stamp.js の注記）。
+  stamp: {
+    move: (s, at) => moveStampTo(s, at),
+    save: (id, at) => patchStamp(state.plan.session.id, id, at),
+    body: (s) => stampPatchBody(s),
+    inside: (s) => stampInside(s),
+    denied: "他の人のスタンプは動かせません。動かせるのは置いた本人と管理者だけです。",
+    failed: (message) => `スタンプを動かせませんでした。${message}`,
+    outside: "マップの外です。マップの上へ動かしてください。",
+    moved: "スタンプを動かしました。",
+  },
 };
+
+/** 保存に送る座標（既定は始点1点）。 */
+const bodyOf = (kind, p) => DRAGGABLE[kind].body?.(p) ?? { x_m: p.x_m, y_m: p.y_m };
+
+/** マップの中にあるか（既定は始点1点）。 */
+const insideOf = (kind, p) =>
+  DRAGGABLE[kind].inside?.(p) ?? insideMap({ x_m: p.x_m, y_m: p.y_m });
 
 /** 置いたマーカー・地名をドラッグして動かし始める。 */
 function beginDrag(evt, p, kind = "placement") {
@@ -156,8 +180,8 @@ async function endDrag(d) {
 async function commitDrag(d) {
   const kind = DRAGGABLE[d.kind];
   const p = d.p;
-  const at = { x_m: p.x_m, y_m: p.y_m };
-  if (!insideMap(at)) {
+  const at = bodyOf(d.kind, p);
+  if (!insideOf(d.kind, p)) {
     kind.move(p, d.from);
     refreshDetail(p);
     say(kind.outside);
@@ -196,6 +220,7 @@ export function wireBoard() {
       cancelBandDrag();
       cancelBand();
       cancelPaint();
+      cancelStampDraw();
       state.pan = null;
       delete board.dataset.panning;
       startPinch();
@@ -252,6 +277,20 @@ export function wireBoard() {
       return;
     }
 
+    // スタンプも配置・地名と同じ扱い。押せば選べて、自分のものならドラッグで動かせる。
+    // **層は配置より下**なので、重なっている所では配置のほうが先に拾われる
+    // （上の2つを通り抜けてきた ＝ スタンプが一番上にある所を押した）。
+    const stHit = evt.target instanceof Element
+      ? evt.target.closest("#stamps [data-uid]") : null;
+    if (stHit) {
+      const uid = Number(stHit.dataset.uid);
+      const st = state.stamps.find((x) => x.uid === uid) ?? null;
+      selectStamp(st);
+      if (st && canEdit(st)) beginDrag(evt, st, "stamp");
+      else beginPan(evt, { deferred: true });
+      return;
+    }
+
     // 「移動」の道具。**置いてあるものの当たり判定を外れた所**でだけパンになる
     // （上の2つを通り抜けてきた ＝ 何も置かれていない地面を押した）。
     if (state.mode === "pan") { beginPan(evt); return; }
@@ -274,6 +313,20 @@ export function wireBoard() {
       return;
     }
 
+    // スタンプ。**点のものは配置と同じ**（押しただけで置く。動かしたらパン）。
+    // **向きを持つものだけはドラッグで引く**（引いた向きが意味を持つので、
+    // ドラッグ以外に向きを決める手が無い）。この状態のドラッグはパンにならない。
+    if (state.mode === "stamp" && state.stampPick !== null) {
+      const def = state.stampDefById.get(state.stampPick);
+      if (def && def.draw_kind === "vector") {
+        if (beginStampDraw(evt)) board.setPointerCapture(evt.pointerId);
+        return;
+      }
+      const { clientX, clientY } = evt;
+      beginPan(evt, { deferred: true, tap: () => placeStampAt({ clientX, clientY }) });
+      return;
+    }
+
     if (state.mode === "eraser") { eraseAt(evt); return; }
     // マップ外から引き始めたときは捕捉もしない（以降の move を拾わない）。
     if (!beginStroke(evt)) return;
@@ -290,6 +343,7 @@ export function wireBoard() {
     if (state.bandDrag) { bandDragMove(evt); return; }
     if (state.band) { bandMove(evt); return; }
     if (state.paint) { paintMove(evt); return; }
+    if (state.stampDraw) { stampDrawMove(evt); return; }
     if (state.pan) {
       // 閾値を超えるまでは動かさない。超えた時点でクリック扱いを取り下げる。
       if (!state.pan.moved) {
@@ -329,6 +383,13 @@ export function wireBoard() {
       p.rect.remove();
       if (readoutPaint) readoutPaint.textContent = "";
       if (!canceled) endPaint(p, evt);
+    }
+    if (state.stampDraw) {
+      const d = state.stampDraw;
+      state.stampDraw = null;
+      // プレビューは確定の有無にかかわらず片付ける（結果はスタンプのほうに出る）。
+      d.node.remove();
+      if (!canceled) endStampDraw(d, evt);
     }
     if (state.pan) {
       const { tap, moved } = state.pan;
@@ -446,6 +507,12 @@ export function wireKeys() {
     if (state.mode === "callout") {
       setCalloutMode(false);
       say("地名を置くのをやめました。移動に戻ります。");
+      return;
+    }
+    if (state.mode === "stamp") {
+      clearStampPick();
+      setMode(DEFAULT_MODE);
+      say("スタンプの選択を外しました。移動に戻ります。");
       return;
     }
     if (state.mode === "zone") {

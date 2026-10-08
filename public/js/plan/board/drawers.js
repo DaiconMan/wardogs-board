@@ -1,11 +1,12 @@
 // 左の引き出し（パレットと「円とマス」のパネル）。**開くのは1枚だけ。**
 
 import { say } from "../chrome.js";
-import { narrowQuery, paletteEl, zonePanelEl } from "../dom.js";
+import { narrowQuery, paletteEl, stampPanelEl, zonePanelEl } from "../dom.js";
 import { HOTZONE_ITEM_ID, KINDS, costText, isUnverified, rangeText } from "../placements.js";
 import { clearChildren } from "../render.js";
 import { state } from "../state.js";
 import { clearZoneKind } from "./area.js";
+import { clearStampPick } from "./stamp.js";
 import { setMode } from "./tools.js";
 
 /**
@@ -147,8 +148,9 @@ export function pickItem(id) {
   const next = state.pick === id ? null : id;
   state.pick = next;
   markPicked();
-  // 建造物とエリアは排他（盤面を押したときの意味は常に1つだけ）。
+  // 建造物・エリア・スタンプは排他（盤面を押したときの意味は常に1つだけ）。
   clearZoneKind();
+  clearStampPick();
   // パレットから選んだ＝置く道具は「配置」。地名の道具からは抜ける。
   setMode(next ? "place" : "pen");
   if (!next) { say(""); return; }
@@ -183,18 +185,61 @@ export function clearPick() {
  */
 export let drawerTouched = false;
 
+/**
+ * 左の引き出しの一覧。**開くのは1枚だけ**を、ここ1箇所で保証する。
+ *
+ * 引き出しが3枚になった時点で「開くときに他の2枚を畳む」を各関数へ書き写すのを
+ * やめた。書き写すと、新しい引き出しを足した人が**1組だけ書き忘れて、
+ * その2枚だけが重なる**（しかも狭い画面でしか見えない）。
+ */
+const DRAWERS = {
+  palette: { el: () => paletteEl, btn: "toggle-palette" },
+  zones: { el: () => zonePanelEl, btn: "toggle-zones" },
+  stamps: { el: () => stampPanelEl, btn: "toggle-stamp-panel" },
+};
+
+/** 1枚の開閉を画面に当てる（他の引き出しのことは見ない）。 */
+function applyDrawer(name, on) {
+  const d = DRAWERS[name];
+  const el = d.el();
+  if (!el) return false;
+  el.hidden = !on;
+  const btn = document.getElementById(d.btn);
+  if (btn) {
+    btn.setAttribute("aria-pressed", String(on));
+    btn.setAttribute("aria-expanded", String(on));
+  }
+  return true;
+}
+
+/** `name` を開く（他は畳む）／畳む。 */
+function setDrawerOpen(name, on) {
+  if (!applyDrawer(name, on)) return false;
+  if (!on) return true;
+  for (const other of Object.keys(DRAWERS)) {
+    if (other !== name) applyDrawer(other, false);
+  }
+  return true;
+}
+
 export function setPaletteOpen(on, remember = false) {
-  if (!paletteEl) return;
-  paletteEl.hidden = !on;
-  const btn = document.getElementById("toggle-palette");
-  btn.setAttribute("aria-pressed", String(on));
-  btn.setAttribute("aria-expanded", String(on));
-  // 左の引き出しは1枚だけにする（2枚重なると下のパネルが読めない）。
-  if (on) setZonePanelOpen(false);
+  if (!setDrawerOpen("palette", on)) return;
   if (!remember) return;
   drawerTouched = true;
   // 保存できない（プライベートモード等）としても、開閉そのものは効いたままでよい。
   try { localStorage.setItem(PALETTE_KEY, on ? "open" : "closed"); } catch { /* 覚えないだけ */ }
+}
+
+/**
+ * スタンプの棚の開閉。
+ *
+ * 自分で開けたら、遅れて届くカタログの自動オープン（`loadPlacements`）に勝たせる
+ * （`setZonePanelOpen` と同じ理由。あちらの注記を参照）。
+ * localStorage には書かない（「次もスタンプを開いておく」は決めていない）。
+ */
+export function setStampPanelOpen(on) {
+  if (!setDrawerOpen("stamps", on)) return;
+  if (on) drawerTouched = true;
 }
 
 /**
@@ -211,11 +256,7 @@ export function paletteOpenAtStart() {
 
 /** エリアのパネルの開閉。左の引き出しは1枚だけにする（重ねると読めない）。 */
 export function setZonePanelOpen(on) {
-  if (!zonePanelEl) return;
-  zonePanelEl.hidden = !on;
-  const btn = document.getElementById("toggle-zones");
-  btn.setAttribute("aria-pressed", String(on));
-  btn.setAttribute("aria-expanded", String(on));
+  if (!setDrawerOpen("zones", on)) return;
   if (!on) return;
   // **自分で引き出しを開けたら、遅れて届くカタログの自動オープンに勝たせる。**
   // カタログは盤面より後に読むので、届いた時点で「広い画面ならパレットを開く」が

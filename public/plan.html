@@ -238,6 +238,19 @@
          置くのは、線の下に隠れた地名を押せなくなるのを避けるため。
          data-names は app.js が付ける（広く見ているときは名前を伏せる）。 -->
     <g id="callouts" data-names="off"></g>
+    <!-- スタンプ（図形・向きを持つ印・軍用記号）。D-062 のオーナー要望:
+         「四角とか、丸、などスタンプほしいですね」「軍用記号です」。
+         **点のものは画面上で一定の大きさ**（配置マーカーと同じ逆スケール）、
+         **向きを持つものは線だけマップ座標**（長さと向きが情報なので、
+         地図と同じ縮尺で伸縮しないと嘘になる）。太さと矢の先は画面基準に戻す。
+         配置より下に敷くのは、スタンプが「盤面への書き込み」で、建造物が
+         「置いた物」だから（線とマーカーの関係と同じ）。
+         中身は board/stamp.js が入れる。 -->
+    <g id="stamps"></g>
+    <!-- 向きを持つスタンプを**引いている最中**のプレビュー。離すまで中身が入る。
+         エリアのプレビューと同じ考え方で、確定前の形をその場に見せる。
+         押せない（引いている最中に自分の線を掴まない）。 -->
+    <g id="stamp-draft" aria-hidden="true"></g>
     <!-- 配置のマーカー。画面上で一定の大きさ（実寸は未実測なので描けない）。
          押すと詳細が出るので、当たり判定はここだけが持つ。 -->
     <g id="placements"></g>
@@ -299,6 +312,13 @@
        マス塗りは落ち着いて書くもの。名前に「円」を入れてあるのも同じ理由で、
        フッターを見たときに円がどこにあるか分かるようにするため
        （オーナー報告: 「円を出すのに導線が長すぎます」）。 -->
+  <!-- スタンプの棚。パレットと「円とマス」と同じ左の引き出しで、**同時には1枚だけ**。
+       中身は board/stamp.js の buildStampPanel() が入れる（組み込み25件は
+       D1 の stamps 表から来るので、HTML には並べない）。
+       **注記（.note）に「どこが APP-6 で、どこが独自か」を必ず書く。**
+       軍用記号は見慣れた人に一目で伝わることが狙いなので、そこを曖昧にすると
+       読み手が自分の知識とこの画面のどちらを信じるか決められない。 -->
+  <aside id="stamppanel" aria-label="スタンプ" hidden></aside>
   <aside id="zonepanel" aria-label="円とマス" hidden>
     <div class="head">
       <h2>円とマス</h2>
@@ -451,6 +471,12 @@
       <div class="cluster-row">
         <button id="toggle-palette" type="button" aria-pressed="false" aria-expanded="false" aria-controls="palette">建造物</button>
         <button id="toggle-zones" type="button" aria-pressed="false" aria-expanded="false" aria-controls="zonepanel">円とマス</button>
+        <!-- スタンプ（図形・向きを持つ印・軍用記号）。**「置く」のまとまりに入れる。**
+             引き出しを開くボタンなので、道具の排他の1組（移動／ペン／…）ではない
+             （§6「引き出しのボタンは、中で扱うものの名前を名乗る」）。
+             `建造物` より後に置くのは、置く頻度がこちらのほうが低いため
+             （390px では棚が横スクロールになるので、並びがそのまま手の届きやすさ）。 -->
+        <button id="toggle-stamp-panel" type="button" aria-pressed="false" aria-expanded="false" aria-controls="stamppanel">スタンプ</button>
       </div>
     </div>
 
@@ -492,6 +518,7 @@
             <span class="group" id="overlay-toggles">
               <button type="button" id="toggle-ranges" aria-pressed="true">射程を表示</button>
               <button type="button" id="toggle-callouts" aria-pressed="true">地名を表示</button>
+              <button type="button" id="toggle-stamps" aria-pressed="true">スタンプを表示</button>
             </span>
             <!-- 地図が持っている物。チームが置いた物（建造物・地名・エリア）の
                  表示切り替えとは別の見出しにする。 -->

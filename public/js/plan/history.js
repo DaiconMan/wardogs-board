@@ -7,7 +7,7 @@
 //     entry instead of rewriting the old entry's id — see below.
 //
 // ── 山が2つある理由 ──────────────────────────────────────────
-// 線・配置・エリア・地名は**1本の台帳**（`done`）に操作した順で積む。戻すときは
+// 線・配置・エリア・地名・スタンプは**1本の台帳**（`done`）に操作した順で積む。戻すときは
 // 末尾から種類を見て戻す。**戻した操作は捨てずに `undone` へ移す**ので、やり直せる。
 // **新しい操作をしたら `undone` を捨てる**（分岐した履歴を持たない。普通の作法）。
 //
@@ -15,7 +15,7 @@
 // 戻す ＝ サーバから DELETE、やり直す ＝ もう一度 POST なので、**新しい id が振られる。**
 //
 // **やり直しは「古い項目の id を書き換える」のではなく、「置く経路をもう一度通して、
-// その結果を新しい項目として積む」形にしてある。** 配置・地名・エリアの台帳項目は
+// その結果を新しい項目として積む」形にしてある。** 配置・地名・エリア・スタンプの台帳項目は
 // オブジェクトの参照を持ち、`id` は POST の `.then()` が入れるので、作り直せば
 // 新しい id が自然に入る。**id を書き換える工程そのものが無いので、書き忘れる場所も無い。**
 // 観測できる挙動（やり直したあと、もう一度「戻す」が効く）は同じ。
@@ -81,7 +81,7 @@ export function pushUndone(h, snapshot) {
  * 画面から消えたものの項目を台帳から外す。
  *
  * **残すと、消えたものをもう一度消しにいく**（他の人が消した・保存が失敗した、など）。
- * 配置・地名・エリアを画面から外す所（`removePlacement` ほか）が呼ぶ。
+ * 配置・地名・エリア・スタンプを画面から外す所（`removePlacement` ほか）が呼ぶ。
  * 外した件数を返す。
  */
 export function dropDone(h, match) {
@@ -133,6 +133,23 @@ export function snapshotOf(entry) {
   if (entry.callout) {
     const c = entry.callout;
     return { kind: "callout", name: c.name, x_m: c.x_m, y_m: c.y_m };
+  }
+
+  if (entry.stamp) {
+    const s = entry.stamp;
+    // **終点（`x2_m` / `y2_m`）を必ず持つ。** 落とすと、向きを持つスタンプを
+    // やり直したときに向きが消える（サーバは終点の無い `vector` を 400 で断るので、
+    // やり直し自体が黙って失敗する形になる）。
+    // 無いときは `null` に揃える（`undefined` のままだと JSON から項目ごと消える）。
+    return {
+      kind: "stamp",
+      stamp_id: s.stamp_id,
+      x_m: s.x_m,
+      y_m: s.y_m,
+      x2_m: Number.isFinite(s.x2_m) ? s.x2_m : null,
+      y2_m: Number.isFinite(s.y2_m) ? s.y2_m : null,
+      note: s.note ?? null,
+    };
   }
 
   if (entry.area) {

@@ -70,10 +70,22 @@ CREATE TABLE IF NOT EXISTS zones (
 CREATE INDEX IF NOT EXISTS idx_zones_map ON zones (map_id, id);
 
 -- ===== スタンプ定義（ユーザーが追加できる） =====
+--
+-- **3つの列（shape / glyph / color）で、図形も軍用記号も凸型も表す。**
+-- 外形が陣営、中身が兵種（APP-6 の作法）。新しい列は足さない。
+--
+--   shape      外形。circle / square / triangle / diamond / quatrefoil / arrow / line
+--   glyph      外形の中に入れる1〜2文字（歩 / 装 / 砲 …）。図形には入れない
+--   color      デザイントークンのキー名（blue / red / hot / green / muted）
+--   draw_kind  point（1点で置く）/ vector（始点と終点をドラッグで決める）
+--
+-- **`shape` と `draw_kind` に CHECK は付けない。** SQLite の ALTER では後から
+-- 付けられないので、新規 DB だけに制約が付いて本番と形が食い違う（sessions.visibility
+-- と同じ理由）。知らない形は画面側が角丸の四角に倒す（public/js/plan/stamps.js）。
 CREATE TABLE IF NOT EXISTS stamps (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   label       TEXT    NOT NULL,
-  shape       TEXT    NOT NULL,   -- circle / square / triangle / shield / pin / arrow / line
+  shape       TEXT    NOT NULL,   -- circle / square / triangle / diamond / quatrefoil / arrow / line
   color       TEXT    NOT NULL,   -- デザイントークンのキー名
   glyph       TEXT,               -- 1〜2文字 または 絵文字1つ
   draw_kind   TEXT    NOT NULL,   -- point / vector
@@ -83,6 +95,65 @@ CREATE TABLE IF NOT EXISTS stamps (
 );
 CREATE INDEX IF NOT EXISTS idx_stamps_creator ON stamps (created_by);
 -- 追加した時点で全員に見える（承認フローなし）。1ユーザー20件までの上限は API 側で検査する。
+-- 組み込み（builtin = 1）の名前は重複させない。**下の種まきが冪等であることの
+-- 二重の担保**（種まき自体は id を明示した INSERT OR IGNORE なので主キーで弾かれる）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stamps_builtin_label
+  ON stamps (label) WHERE builtin = 1;
+
+-- ===== 組み込みのスタンプ（builtin = 1）=====
+--
+-- **id を明示した `INSERT OR IGNORE`** なので、何度流しても増えない（主キーで弾かれる）。
+-- AUTOINCREMENT は sqlite_sequence の最大値から続くので、あとから利用者が
+-- 作るスタンプ（第2段）は 26 以降になる。
+--
+-- ── 軍用記号について（守ること）──────────────────────────────
+-- **狙いは「見慣れた人に一目で伝わること」なので、記号を創作しない。**
+-- 外形は APP-6 / MIL-STD-2525 の枠そのまま:
+--
+--   味方 … square（四角）      hostile でない側の枠
+--   敵   … diamond（菱形）
+--   不明 … quatrefoil（四葉）  ← APP-6 の unknown の枠。**代用していない**
+--
+-- **APP-6 から外れているのは中身（兵種）だけ。** APP-6 は兵種を図形
+-- （歩兵＝×、装甲＝楕円、砲兵＝塗り丸 …）で描くが、ここでは漢字1文字で置いている。
+-- 16px の枠に図形を入れると潰れて見分けられないのと、VC で声に出す語
+-- （「歩兵」「装甲」）と画面の字が一致するほうがこのチームには速いため。
+-- **これは独自**なので、UI の注記（#stamppanel の .note）に必ず書く。
+--
+-- 色は既存のデザイントークンの配り直しだけで済ませる（新しい色を足さない）。
+-- 味方＝blue / 敵＝red / 不明＝hot。APP-6 の黄（unknown）に当たるトークンが
+-- 無いので、暖色の hot を回している。
+INSERT OR IGNORE INTO stamps (id, label, shape, color, glyph, draw_kind, builtin, created_by, created_at) VALUES
+  -- 図形（場所を指す・範囲を囲う）。無彩色にして「陣営の記号ではない」を形と色で示す。
+  ( 1, '四角',         'square',     'muted', NULL, 'point',  1, NULL, 1791417600),
+  ( 2, '丸',           'circle',     'muted', NULL, 'point',  1, NULL, 1791417600),
+  ( 3, '三角',         'triangle',   'muted', NULL, 'point',  1, NULL, 1791417600),
+  -- 向きを持つ印（オーナーの言う「凸型の敵／味方を示すもの」）。陣営の色で置き分ける。
+  ( 4, '矢印（味方）', 'arrow',      'blue',  NULL, 'vector', 1, NULL, 1791417600),
+  ( 5, '矢印（敵）',   'arrow',      'red',   NULL, 'vector', 1, NULL, 1791417600),
+  ( 6, '線（味方）',   'line',       'blue',  NULL, 'vector', 1, NULL, 1791417600),
+  ( 7, '線（敵）',     'line',       'red',   NULL, 'vector', 1, NULL, 1791417600),
+  -- 軍用記号・味方（四角 × 青）
+  ( 8, '味方 歩兵',    'square',     'blue',  '歩', 'point',  1, NULL, 1791417600),
+  ( 9, '味方 装甲',    'square',     'blue',  '装', 'point',  1, NULL, 1791417600),
+  (10, '味方 砲兵',    'square',     'blue',  '砲', 'point',  1, NULL, 1791417600),
+  (11, '味方 偵察',    'square',     'blue',  '偵', 'point',  1, NULL, 1791417600),
+  (12, '味方 工兵',    'square',     'blue',  '工', 'point',  1, NULL, 1791417600),
+  (13, '味方 補給',    'square',     'blue',  '補', 'point',  1, NULL, 1791417600),
+  -- 軍用記号・敵（菱形 × 赤）
+  (14, '敵 歩兵',      'diamond',    'red',   '歩', 'point',  1, NULL, 1791417600),
+  (15, '敵 装甲',      'diamond',    'red',   '装', 'point',  1, NULL, 1791417600),
+  (16, '敵 砲兵',      'diamond',    'red',   '砲', 'point',  1, NULL, 1791417600),
+  (17, '敵 偵察',      'diamond',    'red',   '偵', 'point',  1, NULL, 1791417600),
+  (18, '敵 工兵',      'diamond',    'red',   '工', 'point',  1, NULL, 1791417600),
+  (19, '敵 補給',      'diamond',    'red',   '補', 'point',  1, NULL, 1791417600),
+  -- 軍用記号・不明（四葉 × 暖色）
+  (20, '不明 歩兵',    'quatrefoil', 'hot',   '歩', 'point',  1, NULL, 1791417600),
+  (21, '不明 装甲',    'quatrefoil', 'hot',   '装', 'point',  1, NULL, 1791417600),
+  (22, '不明 砲兵',    'quatrefoil', 'hot',   '砲', 'point',  1, NULL, 1791417600),
+  (23, '不明 偵察',    'quatrefoil', 'hot',   '偵', 'point',  1, NULL, 1791417600),
+  (24, '不明 工兵',    'quatrefoil', 'hot',   '工', 'point',  1, NULL, 1791417600),
+  (25, '不明 補給',    'quatrefoil', 'hot',   '補', 'point',  1, NULL, 1791417600);
 
 -- ===== プリセット初期配置 =====
 CREATE TABLE IF NOT EXISTS presets (
@@ -182,12 +253,16 @@ CREATE TABLE IF NOT EXISTS plan_stamps (
   y_m         REAL    NOT NULL,
   x2_m        REAL,                -- vector の終点
   y2_m        REAL,
-  count       INTEGER,             -- 「敵多い」のように数を持つもの
+  count       INTEGER,             -- 「敵多い」のように数を持つもの（列はあるが v1 では使わない）
   note        TEXT,                -- 任意
   created_by  TEXT    NOT NULL,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  -- 再送しても二重にならないための鍵（D-028）。配置・地名・線・エリアと同じ作法。
+  -- 既存 DB 用の ALTER は migrations/2026-10-08-add-plan-stamps-uuid.sql。
+  client_uuid TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_plan_stamps_session ON plan_stamps (session_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_stamps_uuid ON plan_stamps (session_id, client_uuid);
 
 -- ===== カスタムコールアウト（自分たちの呼び名） =====
 -- 地名は2層になっている。

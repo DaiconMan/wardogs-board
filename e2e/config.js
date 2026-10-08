@@ -92,6 +92,7 @@ export const PLAN_BINDINGS = {
 // | 10001–10100 | plan-cursors.spec.js（在室50人の2本だけ。下記） |
 // | 10102–10120 | plan-redo.spec.js               |
 // | 10121–10140 | plan-marquee.spec.js            |
+// | 10141–10161 | plan-stamps.spec.js             |
 // | 93/96/97/98/99 の x40 x41 x50 x51 | shots.spec.js（`npm run shots` 専用） |
 //
 // **既にある重なり**（2026-09-30 時点。今は落ちていないが、件数を見る

@@ -19,6 +19,7 @@ import { updateCursorScale } from "./cursor.js";
 import { updateSpawnScale, updateTowerScale } from "./fixtures.js";
 import { drawFineGrid, updateGutter } from "./grid.js";
 import { updateMarkerScale } from "./place.js";
+import { updateStampScale } from "./stamp.js";
 import { updateZoneScale } from "./zone.js";
 
 /** ボタンのズームの倍率と、アニメーションの長さ。 */
@@ -84,6 +85,7 @@ export function applyView() {
   updateGutter();
   updateMarkerScale();
   updateCalloutScale();
+  updateStampScale();
   updateTowerScale();
   updateSpawnScale();
   updateZoneScale();

@@ -1,6 +1,6 @@
 // 範囲選択（「選択」の道具）。枠で囲ってまとめて消す・まとめて動かす。
 //
-// EN: Marquee selection. Drag a box to pick the placements and callouts inside it,
+// EN: Marquee selection. Drag a box to pick the placements, callouts and stamps inside it,
 //     then delete or move them as a group. There is no bulk API, so a group action
 //     is N single calls wrapped in batchCalls() so that only one change notice goes
 //     out. Geometry lives in ../marquee.js (pure); this file is the operations.
@@ -11,14 +11,20 @@
 // 枠の計算（矩形・中にあるか・件数の文言）は ../marquee.js。ここは操作と描き替え。
 //
 // ── 3つの決めごと ───────────────────────────────────────────
-// 1. **対象は配置と地名だけ**（v1）。線は消しゴムが、エリアは塗りの取り消しがある
+// 1. **対象は配置・地名・スタンプ**。線は消しゴムが、エリアは塗りの取り消しがある
+//    （スタンプは D-078 のあとに足した。**「配置と地名は選べるのにスタンプは選べない」に
+//    しない** — 枠で囲う操作は「見えている物をまとめて」が期待なので、
+//    1種類だけ外れていると「壊れている」と読まれる）
 // 2. **自分のものしか動かせない・消せない。** サーバが 403 を返す（admin は例外）ので、
 //    **押せるのに 403 になる形にしない。** 枠に入った他人のものは薄く見せて、
 //    件数を「7件を選択（うち自分のもの 4件）」と分けて出す
 // 3. **まとめ操作の通知は1回。** DELETE も PATCH も1件ずつしか無いので、
 //    20件消すと api.js の call() を20回通る。`batchCalls` でくるんで1通にする
 
-import { batchCalls, deleteCallout, deletePlacement, patchCallout, patchPlacement } from "../api.js";
+import {
+  batchCalls, deleteCallout, deletePlacement, deleteStamp, patchCallout, patchPlacement,
+  patchStamp,
+} from "../api.js";
 import { say } from "../chrome.js";
 import { SVG_NS, bandLayer, board } from "../dom.js";
 import { mineOf, normalizeBox, pickInBox, selectionText } from "../marquee.js";
@@ -27,20 +33,34 @@ import { movedBeyond, tapSlop } from "../util.js";
 import { moveCalloutTo, removeCallout, selectCallout } from "./callout.js";
 import { renderDetail } from "./detail.js";
 import { moveMarkerTo, removePlacement, selectPlacement } from "./place.js";
+import {
+  moveStampTo, removeStamp, selectStamp, stampInside, stampPatchBody,
+} from "./stamp.js";
 import { insideMap, pointerToMeters } from "./view.js";
 
-/** 枠に入れられるもの（配置と地名）。**伏せているものは選ばない。** */
+/** 枠に入れられるもの（配置・地名・スタンプ）。**伏せているものは選ばない。** */
 function selectable() {
   const out = [];
   // 見えていないものを選ばせない。「地名を表示」を切った状態で囲って消すと、
   // 見えない所から物が消えることになる（置く道具と同じ決まり）。
   for (const p of state.placements) out.push(p);
   if (state.showCallouts) for (const c of state.callouts) out.push(c);
+  if (state.showStamps) for (const s of state.stamps) out.push(s);
   return out;
 }
 
-/** その物が配置か地名かを、持っている項目で見分ける（種類の札を増やさない）。 */
-const isCallout = (o) => state.callouts.includes(o);
+/**
+ * その物が何かを、**どの列に入っているか**で見分ける（種類の札を増やさない）。
+ *
+ * 種類が3つになっても `state.<列>.includes(o)` のままにしてあるのは、
+ * 物の側に `kind` を持たせると**置く所・取り直す所・運ぶ所の3箇所で
+ * 書き忘れる余地**ができるため（列は1つしか在れない）。
+ */
+const kindName = (o) => {
+  if (state.callouts.includes(o)) return "callout";
+  if (state.stamps.includes(o)) return "stamp";
+  return "placement";
+};
 
 /** 種類ごとの差分。pointer.js の DRAGGABLE と同じ作法で、分岐を散らさない。 */
 const KIND = {
@@ -49,26 +69,48 @@ const KIND = {
     save: (id, at) => patchPlacement(state.plan.session.id, id, at),
     remove: (o) => removePlacement(o),
     del: (id) => deletePlacement(state.plan.session.id, id),
+    node: (o) => o.marker,
+    unselect: () => selectPlacement(null),
   },
   callout: {
     move: (o, at) => moveCalloutTo(o, at),
     save: (id, at) => patchCallout(state.plan.session.id, id, at),
     remove: (o) => removeCallout(o),
     del: (id) => deleteCallout(state.plan.session.id, id),
+    node: (o) => o.node,
+    unselect: () => selectCallout(null),
+  },
+  // スタンプだけ `body` と `inside` を持つ（向きを持つものは両端が動く。
+  // 片側だけ送るとサーバが 400。pointer.js の DRAGGABLE と同じ理由）。
+  stamp: {
+    move: (o, at) => moveStampTo(o, at),
+    save: (id, at) => patchStamp(state.plan.session.id, id, at),
+    remove: (o) => removeStamp(o),
+    del: (id) => deleteStamp(state.plan.session.id, id),
+    node: (o) => o.node,
+    unselect: () => selectStamp(null),
+    body: (o) => stampPatchBody(o),
+    inside: (o) => stampInside(o),
   },
 };
 
-const kindOf = (o) => (isCallout(o) ? KIND.callout : KIND.placement);
+const kindOf = (o) => KIND[kindName(o)];
 
-/** 画面の要素（マーカー・地名）を持っている物。 */
-const nodeOf = (o) => (isCallout(o) ? o.node : o.marker);
+/** 画面の要素（マーカー・地名の点・スタンプ）を持っている物。 */
+const nodeOf = (o) => kindOf(o).node(o);
+
+/** 保存に送る座標（既定は1点だけ）。 */
+const bodyOf = (o) => kindOf(o).body?.(o) ?? { x_m: o.x_m, y_m: o.y_m };
+
+/** マップの中にあるか（既定は1点だけ）。 */
+const insideOf = (o) => kindOf(o).inside?.(o) ?? insideMap({ x_m: o.x_m, y_m: o.y_m });
 
 // ── 選んだものの印 ─────────────────────────────────────────
 // **新しい見た目の語彙を足さない。** 選択の青（`.sel`）をそのまま使い、
 // 他人のものだけ `data-picked="other"` で薄くする（§3 の「無効」と同じ .45）。
 
 function markPicked(sel) {
-  for (const o of state.placements.concat(state.callouts)) {
+  for (const o of state.placements.concat(state.callouts, state.stamps)) {
     const node = nodeOf(o);
     if (node) delete node.dataset.picked;
   }
@@ -91,6 +133,7 @@ export function setPicked(items) {
   // selectPlacement(null) が走らせる renderDetail は空の検視台を描いて終わる。
   selectPlacement(null);
   selectCallout(null);
+  selectStamp(null);
   state.picked = { items: [...items], mine: mineOf(items, canEdit) };
   markPicked(state.picked);
   renderDetail();
@@ -173,7 +216,9 @@ export function endBand(b, evt) {
 export function pickedHit(target) {
   const sel = state.picked;
   if (!sel || !(target instanceof Element)) return null;
-  const node = target.closest("#placements [data-uid], #callouts [data-uid]");
+  const node = target.closest(
+    "#placements [data-uid], #callouts [data-uid], #stamps [data-uid]"
+  );
   if (!node) return null;
   const uid = Number(node.dataset.uid);
   return sel.mine.find((o) => o.uid === uid && nodeOf(o) === node) ?? null;
@@ -239,7 +284,7 @@ export async function endBandDrag(d) {
   delete board.dataset.dragging;
   if (!d.moved) return;
 
-  if (d.items.some((o) => !insideMap({ x_m: o.x_m, y_m: o.y_m }))) {
+  if (d.items.some((o) => !insideOf(o))) {
     restore(d);
     say("マップの外です。マップの上へ動かしてください。");
     return;
@@ -253,7 +298,7 @@ export async function endBandDrag(d) {
   try {
     await batchCalls(async () => {
       for (const o of d.items) {
-        const at = { x_m: o.x_m, y_m: o.y_m };
+        const at = bodyOf(o);
         let id;
         try {
           id = o.id ?? (await o.saving);

@@ -142,13 +142,15 @@ export function removePlacement(p) {
 
 /**
  * 選択中の配置だけを強調する（複数置いたときにリングが混ざらないように）。
- * 詳細パネルは配置と地名で1枚を使い回すので、地名の選択は必ず外す
+ * 詳細パネルは配置・地名・スタンプで1枚を使い回すので、他の選択は必ず外す
  * （どちらを選んでいるのか分からない状態を作らない）。
  */
 export function selectPlacement(p) {
   state.selected = p;
   state.selectedCallout = null;
+  state.selectedStamp = null;
   for (const c of state.callouts) c.node?.classList.remove("sel");
+  for (const s of state.stamps) s.node?.classList.remove("sel");
   for (const other of state.placements) {
     const on = other === p;
     other.marker?.classList.toggle("sel", on);

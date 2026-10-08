@@ -35,6 +35,7 @@ export const state = {
   //   配置 … { placement }
   //   地名 … { callout }
   //   エリア … { area }
+  //   スタンプ … { stamp }
   // 線を { path, saving } の形にしてあるのは、保存が終わる前に取り消し・
   // 消しゴムが来ても「保存を待ってから消す」ができるようにするため。
   // 種類が混ざっているので、取り消しは末尾から順に見て種類ごとに戻す。
@@ -83,6 +84,20 @@ export const state = {
   callouts: [],
   selectedCallout: null,  // 詳細を出している地名（state.callouts の要素）
   showCallouts: true,
+  // ── スタンプ（図形・向きを持つ印・軍用記号）──
+  // 定義（どんなスタンプがあるか。全体で共通）と、この作戦に置いたもの。
+  // どちらも `GET /api/sessions/:id/stamps` の1往復で降りてくる。
+  stampDefs: [],      // { id, label, shape, color, glyph, draw_kind, builtin }
+  stampDefById: new Map(),
+  // { uid, id, stamp_id, x_m, y_m, x2_m, y2_m, note, created_by, node, saving }
+  // 向きを持つものは `x2_m` / `y2_m` を持つ（点のものは null）。
+  stamps: [],
+  stampPick: null,    // 棚で選んでいる定義の id（スタンプの道具のときだけ入る）
+  selectedStamp: null, // 詳細を出しているスタンプ（state.stamps の要素）
+  showStamps: true,
+  // { def, from, to, node, start, slop } 向きを持つスタンプを引いている最中。
+  // エリアの `paint` と範囲選択の `band` と同じ形（引いている最中の持ち方を増やさない）。
+  stampDraw: null,
   // ── ドリルタワー（マップ固定の設備。チームが置いた物ではない）──
   // 盤面の取得に相乗りして降りてくる。編集しないので id で引き直す必要が無く、
   // 画面の <g> を作ったら以後は位置の付け替えだけ。

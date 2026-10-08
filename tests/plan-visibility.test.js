@@ -13,7 +13,7 @@
 // 公開設定を足しただけで既存の使い方が壊れる。受け入れ条件3（読専に書けない）と
 // 5（非公開はURL共有で従来どおり書ける）を**両方**見張る。
 //
-// 書き込む経路は placements / ink / areas / callouts / zone の5つあり、
+// 書き込む経路は placements / ink / areas / callouts / stamps / zone の6つあり、
 // 1つでも判定を書き忘れるとそこからだけ書ける穴が残る。**総当たりで回す。**
 import { describe, it, expect, beforeAll } from "vitest";
 
@@ -90,7 +90,7 @@ async function setVisibility(cookie, id, visibility) {
 let uuidSeq = 0;
 const uuid = () => `vis-${Date.now().toString(36)}-${(uuidSeq += 1)}`;
 
-// ── 書き込む経路。**5種類すべてを1つの表にする。**───────────────────
+// ── 書き込む経路。**6種類すべてを1つの表にする。**───────────────────
 //
 // 各要素は「新しく1件作る（create）」と「それを直す（patch）」と「消す（del）」を
 // 持つ。patch / del は **自分が作った行**に対して呼ぶので、既存の
@@ -174,6 +174,29 @@ const ROUTES = {
       }),
     del: (cookie, id, rowId) =>
       fetch(url(`/api/sessions/${id}/callouts?id=${rowId}`), {
+        method: "DELETE",
+        headers: jsonHeaders(cookie),
+      }),
+  },
+  stamps: {
+    label: "スタンプ（stamps）",
+    create: (cookie, id) =>
+      fetch(url(`/api/sessions/${id}/stamps`), {
+        method: "POST",
+        headers: jsonHeaders(cookie),
+        // stamp_id 1 は組み込みの「四角」（schema.sql の種まき）。
+        body: JSON.stringify({
+          stamps: [{ client_uuid: uuid(), stamp_id: 1, x_m: 2500, y_m: 2500 }],
+        }),
+      }),
+    patch: (cookie, id, rowId) =>
+      fetch(url(`/api/sessions/${id}/stamps?id=${rowId}`), {
+        method: "PATCH",
+        headers: jsonHeaders(cookie),
+        body: JSON.stringify({ x_m: 2600, y_m: 2600 }),
+      }),
+    del: (cookie, id, rowId) =>
+      fetch(url(`/api/sessions/${id}/stamps?id=${rowId}`), {
         method: "DELETE",
         headers: jsonHeaders(cookie),
       }),
@@ -426,7 +449,7 @@ describe("public は読専 — 書き込む経路を総当たり（条件3）", 
     return { owner, other, session, rowIds };
   }
 
-  it("作成者以外は5つの経路すべてで 403（新規・更新・削除）", async () => {
+  it("作成者以外は6つの経路すべてで 403（新規・更新・削除）", async () => {
     const { other, session, rowIds } = await setupPublicPlan("7120", "7121", "読専の作戦");
 
     const denied = [];
@@ -500,7 +523,7 @@ describe("public は読専 — 書き込む経路を総当たり（条件3）", 
 });
 
 describe("public_edit は書ける（条件4）", () => {
-  it("作成者以外が5つの経路すべてで書ける", async () => {
+  it("作成者以外が6つの経路すべてで書ける", async () => {
     const owner = await loginAs("7130", "visedowner");
     const other = await loginAs("7131", "visedother");
     const session = await newSession(owner.cookie, "書き込める作戦");

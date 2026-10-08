@@ -1,11 +1,12 @@
-// 「戻す」と「やり直す」の入口。4種類（線・配置・エリア・地名）の振り分けだけを持つ。
+// 「戻す」と「やり直す」の入口。5種類（線・配置・エリア・地名・スタンプ）の
+// 振り分けだけを持つ。
 //
-// EN: The entry points for undo and redo. This file only dispatches over the four
+// EN: The entry points for undo and redo. This file only dispatches over the five
 //     kinds; each kind's own handling lives in its own module. Redo re-runs the
 //     creation path, so the new row's id lands in a *fresh* ledger entry — no id is
 //     ever rewritten, which is why "undo after redo" works.
 //
-// 台帳は**1本**で、線・配置・エリア・地名が操作した順に混ざって入っている
+// 台帳は**1本**で、線・配置・エリア・地名・スタンプが操作した順に混ざって入っている
 // （`state.mine`）。末尾から種類を見て戻す。「線だけ取り消せる」と、誤って置いた
 // ものを消す手段がパレットと詳細を開き直す経路しか無くなる（オーナー報告の不具合3）。
 //
@@ -31,6 +32,7 @@ import { history, state } from "../state.js";
 import { commitArea, undoArea } from "./area.js";
 import { addCallout, undoCallout } from "./callout.js";
 import { addPlacement, undoPlacement } from "./place.js";
+import { addStamp, undoStamp } from "./stamp.js";
 import { saveStroke, undoStroke } from "./tools.js";
 
 /**
@@ -48,8 +50,9 @@ export async function undo() {
   const snapshot = snapshotOf(entry);
   const ok = entry.placement ? await undoPlacement(entry)
     : entry.callout ? await undoCallout(entry)
-      : entry.area ? await undoArea(entry)
-        : await undoStroke(entry);
+      : entry.stamp ? await undoStamp(entry)
+        : entry.area ? await undoArea(entry)
+          : await undoStroke(entry);
 
   if (!ok) { restoreDone(h, entry); return; }
   // 中身を持たない項目（やり直せないもの）は山に積まない。
@@ -87,6 +90,7 @@ export async function redo() {
 function replay(snapshot) {
   if (snapshot.kind === "placement") return addPlacement(snapshot, { replay: true });
   if (snapshot.kind === "callout") return addCallout(snapshot, { replay: true });
+  if (snapshot.kind === "stamp") return addStamp(snapshot, { replay: true });
   if (snapshot.kind === "area") {
     return commitArea(snapshot.areaKind, snapshot.op, snapshot.rects, {
       replay: true, cellM: snapshot.cell_m,

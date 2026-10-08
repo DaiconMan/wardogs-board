@@ -78,14 +78,16 @@ export function removeCallout(c) {
   if (state.selectedCallout === c) selectCallout(null);
 }
 
-/** 選択中の地名だけを強調する。配置の選択とは排他（パネルは1枚しかない）。 */
+/** 選択中の地名だけを強調する。配置・スタンプの選択とは排他（パネルは1枚しかない）。 */
 export function selectCallout(c) {
   state.selectedCallout = c;
   state.selected = null;
+  state.selectedStamp = null;
   for (const p of state.placements) {
     p.marker?.classList.remove("sel");
     p.range?.classList.remove("sel");
   }
+  for (const s of state.stamps) s.node?.classList.remove("sel");
   for (const other of state.callouts) other.node?.classList.toggle("sel", other === c);
   renderDetail();
 }

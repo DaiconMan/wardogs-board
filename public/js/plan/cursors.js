@@ -298,8 +298,15 @@ export function othersOnly(cursors, meKey) {
  *
  * **1文字にしてあるのは、後から線やエリアを足せるようにするため**（仕様の
  * 「やらないこと」）。ここに無い種類は送らない（勝手に1文字を作らない）。
+ *
+ * スタンプ（`s`）はあとから足した。**1文字増やしただけで通数は増えていない**
+ * （`d` は既に飛んでいる `cur` の項目で、DO 側の `parseCarry` は
+ * `/^[a-z]$/` しか見ていないのでサーバの変更も要らなかった）。
+ * **向きを持つスタンプも始点1組しか載せない。** 終点は受け取る側が
+ * 「始点のずれと同じだけ」動かす（board/stamp.js の `redrawStamp`）ので、
+ * 2点ぶんを載せて通を太らせる必要が無い。
  */
-export const CARRY_KIND = { placement: "p", callout: "c" };
+export const CARRY_KIND = { placement: "p", callout: "c", stamp: "s" };
 
 /**
  * いま送る `cur` に添える `d`。`state.drag` から決まる。

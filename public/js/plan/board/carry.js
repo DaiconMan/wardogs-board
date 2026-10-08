@@ -33,6 +33,7 @@ import { state } from "../state.js";
 import { redrawCallout } from "./callout.js";
 import { createLiveLayer } from "./live.js";
 import { redrawPlacement } from "./place.js";
+import { redrawStamp } from "./stamp.js";
 
 /**
  * 接続の鍵 -> `{ kind, obj }`。
@@ -49,6 +50,7 @@ const layer = createLiveLayer({
 const findObj = (kind, id) => {
   if (kind === "p") return state.placements.find((p) => p.id === id) ?? null;
   if (kind === "c") return state.callouts.find((c) => c.id === id) ?? null;
+  if (kind === "s") return state.stamps.find((s) => s.id === id) ?? null;
   // 知らない種別（将来の線・エリア）。**黙って無視する。**
   // DO は1文字の形しか見ていないので、新しい種別が先に流れてくることがある。
   return null;
@@ -57,11 +59,15 @@ const findObj = (kind, id) => {
 const redraw = (kind, obj) => {
   if (kind === "p") redrawPlacement(obj);
   else if (kind === "c") redrawCallout(obj);
+  else if (kind === "s") redrawStamp(obj);
 };
 
 /** まだ盤面にあるか（運んでいる途中に消された物の絵を描き直さない）。 */
-const onBoard = (kind, obj) =>
-  kind === "p" ? state.placements.includes(obj) : state.callouts.includes(obj);
+const onBoard = (kind, obj) => {
+  if (kind === "p") return state.placements.includes(obj);
+  if (kind === "c") return state.callouts.includes(obj);
+  return state.stamps.includes(obj);
+};
 
 /**
  * 運んでいる人の色で縁取る（`null` で外す）。
@@ -70,6 +76,7 @@ const onBoard = (kind, obj) =>
  * 「それ動かしてるの俺」が伝わる（仕様の「開けたままにしておくこと」）。
  */
 function outline(kind, obj, color) {
+  // 配置は `marker`、地名とスタンプは `node`。
   const node = kind === "p" ? obj.marker : obj.node;
   if (!node) return;
   if (color === null) {
@@ -135,8 +142,11 @@ export function takeCarry(obj) {
   // 戻すのを取り直しまで預けてあったぶんも、ここで打ち切る。
   layer.unwait(obj);
   if (!obj.carry) return;
-  // どちらの列にいるかで種別が決まる（`held` から消したあとでも分かる）。
-  release(state.placements.includes(obj) ? "p" : "c", obj);
+  // どの列にいるかで種別が決まる（`held` から消したあとでも分かる）。
+  release(
+    state.placements.includes(obj) ? "p" : state.callouts.includes(obj) ? "c" : "s",
+    obj
+  );
 }
 
 /** 絵を保存済みの座標へ戻す。 */

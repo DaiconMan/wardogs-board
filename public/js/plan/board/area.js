@@ -15,6 +15,7 @@ import { dropDone, record, recordReplay } from "../history.js";
 import { DEFAULT_MODE, history, state } from "../state.js";
 import { movedBeyond, tapSlop } from "../util.js";
 import { clearPick, setZonePanelOpen } from "./drawers.js";
+import { clearStampPick } from "./stamp.js";
 import { setMode } from "./tools.js";
 import { metersPerPx, readoutPaint, userAt } from "./view.js";
 
@@ -145,6 +146,7 @@ export function setZoneKind(kind) {
     return;
   }
   clearPick();
+  clearStampPick();
   // 見えない所に塗らせない（地名を置く道具と同じ決まり）。
   if (!state.showAreas) setAreasVisible(true);
   // 消しゴムを選んだまま種類を選んだときは、その意味（消す）を引き継ぐ。
