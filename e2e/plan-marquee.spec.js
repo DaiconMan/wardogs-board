@@ -513,12 +513,15 @@ test.describe("狭い画面の棚", () => {
     // **実測値をログに残す。** 「入っている」だけでなく、どれだけ余裕があるかが
     // 読めないと、ラベルを1文字増やしたときに何が押し出されるか分からない。
     // 2026-10-08 の実測: 移動 54 / 選択 243 / 建造物 307 / 円とマス 373 /
-    // 戻す 430 / やり直す 496（棚の全幅 748）。**「取り消し」だけが送り先。**
+    // スタンプ 439 / 戻す 496 / やり直す 562（棚の全幅 814）。
+    // **「スタンプ」と「取り消し」が送り先。** スタンプを足したときに
+    // 円とマス（373）より右へ置いたので、初期表示に残る2つは変わっていない。
     const edges = await page.evaluate(() => {
       const right = (id) => Math.round(document.getElementById(id).getBoundingClientRect().right);
       return {
         移動: right("tool-pan"), 選択: right("tool-select"),
         建造物: right("toggle-palette"), 円とマス: right("toggle-zones"),
+        スタンプ: right("toggle-stamp-panel"),
         戻す: right("undo"), やり直す: right("redo"),
         棚の全幅: document.getElementById("rail").scrollWidth,
       };
