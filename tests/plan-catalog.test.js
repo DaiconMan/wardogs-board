@@ -245,6 +245,35 @@ describe("GET /api/catalog", () => {
     expect(fob.notes).not.toContain("円か正方形か未確認");
   });
 
+  // 調査（docs/research/2026-10-01-fuel-and-aa.md §3.1）で、カタログの名前が
+  // 誤っていたことが分かった。日本語 Wiki の攻撃設備表は用途を
+  // 「CIWS = 対空 / SAM = 対空 / スティングレイ = UAV」と分けていて、
+  // 英語の出典も「remote-controlled, long-range UAV with an explosive payload」で一致する。
+  // **対空だと書いてあると、ヘリに撃てると読める。** 実際は手で飛ばす対装甲の自爆ドローン。
+  it("スティングレイは対空ではなく、自爆ドローンの発射台として返る", async () => {
+    const { cookie } = await loginAs("5028", "c28");
+    const { items } = await (await fetch(url("/api/catalog"), { headers: { cookie } })).json();
+    const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+
+    expect(byId, "stingray が無い").toHaveProperty("stingray");
+    const sr = byId.stingray;
+    // 名前が「対空」と名乗ってはいけない。
+    expect(sr.name_ja, "名前が対空と名乗っている").not.toContain("対空");
+    // 「対空ではない」と書くだけでは正体が伝わらないので、何なのかを名前に出す。
+    expect(sr.name_ja).toContain("スティングレイ");
+    expect(sr.name_ja).toContain("ドローン");
+    // notes は誤りを訂正したことが読めること（過去の名前で覚えている人のため）。
+    expect(sr.notes, "notes が訂正を書いていない").toContain("対空ではない");
+
+    // **対空なのは CIWS と SAM。こちらの「対空」は消さない**（直し過ぎの検出）。
+    expect(byId.vanguard_ciws.notes, "CIWS の対空が消えている").toContain("対空");
+    expect(byId.talon_9k_sam.notes, "SAM の対空が消えている").toContain("対空");
+
+    // 到達距離 約3km は単一出典かつゲーム内未確認なので、射程の列には入れない（D-056）。
+    expect(sr.range_max_m, "未確認の到達距離が射程として入っている").toBeNull();
+    expect(sr.verified).toBe(0);
+  });
+
   it("ゲームデータ由来の全項目の notes に「名称は要確認」が入っている", async () => {
     const { cookie } = await loginAs("5024", "c24");
     const { items } = await (await fetch(url("/api/catalog"), { headers: { cookie } })).json();
