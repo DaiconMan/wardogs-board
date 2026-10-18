@@ -136,7 +136,7 @@ workers/room/               共有カーソルを中継する Durable Object 用
 
 schema.sql                  D1 のテーブル定義。**冪等**（CREATE TABLE / CREATE [UNIQUE] INDEX の
                             IF NOT EXISTS と、INSERT OR IGNORE だけ。何度流しても増えない）
-migrations/                 既にある DB に1回だけ流す差分 SQL 5本（新規なら不要）
+migrations/                 既にある DB に1回だけ流す差分 SQL 6本（新規なら不要）
 wrangler.toml               Pages 設定（**自分の値を入れる場所が2つある**）
 tools/                      運用・検証スクリプト6本
   dev.mjs                     npm run dev（room 8787 と pages 8788 を同時に立てる）

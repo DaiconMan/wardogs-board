@@ -58,18 +58,20 @@ npx wrangler d1 execute wardogs-blue --remote --file=migrations/2026-09-28-add-p
 | `2026-09-28-add-placement-rank.sql` | `placements.rank`（取得の優先度 1〜9）を追加 |
 | `2026-09-29-add-callout-updated-at.sql` | `callouts.updated_at`（地名マスタの更新時刻）を追加 |
 | `2026-09-29-fix-map-dimensions.sql` | `maps` の一辺を 16,000m → 16,320 / 16,320 / 16,384m に訂正（出典・調査日も更新） |
+| `2026-10-01-fix-stingray-name.sql` | `catalog_items.stingray` の名前を `スティングレイ（対空）` → `スティングレイ（自爆ドローン）` に訂正（対空兵器ではなかった） |
 | `2026-10-02-add-session-visibility.sql` | `sessions.visibility`（作戦ごとの公開設定 private / public / public_edit）と `(visibility, updated_at DESC)` の索引を追加 |
 | `2026-10-08-add-plan-stamps-uuid.sql` | `plan_stamps.client_uuid`（再送で二重に増えないための鍵）と `(session_id, client_uuid)` の UNIQUE 索引を追加 |
 
 ### 列を足さない UPDATE の migration もある
 
-`2026-09-29-fix-map-dimensions.sql` は `ALTER TABLE` ではなく `UPDATE` で、
-**同じ行の値が誤っていた**ケースです。`schema.sql` の `INSERT OR IGNORE` は
+`2026-09-29-fix-map-dimensions.sql` と `2026-10-01-fix-stingray-name.sql` は
+`ALTER TABLE` ではなく `UPDATE` で、**同じ行の値が誤っていた**ケースです。`schema.sql` の `INSERT OR IGNORE` は
 **既にある行を書き換えない**ので、`schema.sql` を流し直しても既存の値は直りません。
 値の訂正は必ずこちらの migration にも書きます（2箇所を直すのは列追加と同じ）。
 
-この migration は `UPDATE` なので、2回流しても結果は同じ（冪等）です。
-ただし**座標データは変換しません**。既存の `placements` / `ink_strokes` /
+どちらも `UPDATE` なので、2回流しても結果は同じ（冪等）です。
+
+ただし `fix-map-dimensions` は**座標データを変換しません**。既存の `placements` / `ink_strokes` /
 `session_callouts` / `session_areas` はメートルで入っているため、寸法だけを 2% 広げると
 既存の点は地図に対してわずかに北西へ寄って見えます。変換するかどうかは、
 **自分のデータを見てから決めてください**（このスクリプトは勝手に書き換えません）。
